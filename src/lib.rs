@@ -54,12 +54,15 @@ pub mod lexer {
 }
 
 pub mod parser {
+    // "Any sufficiently complicated C or Fortran program contains an ad hoc, informally-specified, bug-ridden, slow implementation of half of Common Lisp."
+    // - Peter Greenspun
+    // this lisp parser somehow evolved into poor man's parser combinators
     use super::*;
     use lexer::Token;
 
     type PResult<'tok, T, E = Error> = Result<(T, &'tok [Token]), E>;
 
-    #[derive(Debug)]
+    #[derive(Debug, Eq, PartialEq)]
     pub enum Expression {
         Symbol(String),
         Integer(i64),
@@ -67,12 +70,32 @@ pub mod parser {
         List(Vec<Expression>),
     }
 
-    fn split_first_or<'a>(seq: &'a [Token], reason: &'static str) -> PResult<'a, &'a Token> {
-        let Some(x) = seq.split_first() else {
-            bail!(reason)
-        };
-        Ok(x)
+    impl Expression {
+        pub fn sym(s: &str) -> Self {
+            Self::Symbol(s.to_owned())
+        }
+
+        pub fn new_list() -> Self {
+            Self::List(vec![])
+        }
     }
+
+    /// Creates a new Expression::List like `vec!`.
+    ///
+    /// Essentially a thin wrapper around `vec!`.
+    macro_rules! list {
+        [] => (
+            Expression::new_list()
+        );
+        [$elem:expr; $n:expr] => (
+            Expression::List(vec![$elem; $n])
+        );
+        [$($x:expr),+ $(,)?] => (
+            Expression::List(vec![$($x),+])
+        );
+    }
+
+    pub(crate) use list;
 
     // a bit type-unsafe but it's fine for now
     fn parse_atom(token: &Token) -> Expression {
@@ -87,44 +110,28 @@ pub mod parser {
         }
     }
 
-    enum ParseFirstExp {
-        End,
-        Atom(Expression),
-        List(Vec<Expression>),
-    }
-
-    fn parse_first(tokens: &[Token]) -> PResult<ParseFirstExp, ()> {
-        let Some((first, mut rest)) = tokens.split_first() else {
-            return Err(());
-        };
+    fn parse_first(tokens: &[Token]) -> PResult<Option<Expression>, ()> {
+        let (first, mut rest) = tokens.split_first().ok_or(())?;
         let result = match &first {
-            Token::RParen => ParseFirstExp::End,
-            Token::Integer(_) | Token::Symbol(_) => ParseFirstExp::Atom(parse_atom(first)),
+            Token::RParen => None,
+            Token::Integer(_) | Token::Symbol(_) => Some(parse_atom(first)),
             Token::LParen => {
                 let l = parse_list(rest).map_err(|_| ())?;
                 rest = l.1;
-                ParseFirstExp::List(l.0)
+                Some(Expression::List(l.0))
             }
         };
         Ok((result, rest))
     }
 
-    // TODO: refactor those to use parse_first
-
     fn parse_list(mut tokens: &[Token]) -> PResult<Vec<Expression>> {
         let mut list: Vec<Expression> = vec![];
         loop {
-            let (first, mut rest) = split_first_or(tokens, "Unclosed list!")?;
-            let exp = match &first {
-                Token::RParen => return Ok((list, rest)),
-                Token::Integer(_) | Token::Symbol(_) => parse_atom(first),
-                Token::LParen => {
-                    let l = parse_list(rest)?;
-                    // dbg!(rest);
-                    // dbg!(l.1);
-                    rest = l.1;
-                    Expression::List(l.0)
-                }
+            let Ok((maybe_exp, rest)) = parse_first(tokens) else {
+                bail!("Unclosed list!")
+            };
+            let Some(exp) = maybe_exp else {
+                return Ok((list, rest));
             };
             list.push(exp);
             tokens = rest;
@@ -132,24 +139,27 @@ pub mod parser {
     }
 
     pub fn parse_expr(tokens: &[Token]) -> PResult<Expression> {
-        let (first, mut rest) = split_first_or(tokens, "Unexpected EOF!")?;
-        Ok((
-            match first {
-                Token::RParen => bail!("Unexpected ')'"),
-                Token::Integer(_) | Token::Symbol(_) => parse_atom(first),
-                Token::LParen => {
-                    let l = parse_list(rest)?;
-                    rest = l.1;
-                    dbg!(&rest);
-                    Expression::List(l.0)
-                }
-            },
-            rest,
-        ))
+        let Ok((res, rest)) = parse_first(tokens) else {
+            bail!("Unexpected EOF!")
+        };
+        let Some(exp) = res else {
+            bail!("Unexpected ')'")
+        };
+        Ok((exp, rest))
     }
 
-    pub fn parse_file(source: &str) -> Result<Expression> {
-        parse_expr(&lexer::tokenize(source)?)
+    pub fn parse_script(source: &str) -> Result<Vec<Expression>> {
+        let tokens = lexer::tokenize(source)?;
+        let mut expressions = vec![];
+        let mut unparsed: &[Token] = &tokens;
+
+        while !unparsed.is_empty() {
+            let (exp, rest) = parse_expr(unparsed)?;
+            expressions.push(exp);
+            unparsed = rest;
+        }
+
+        Ok(expressions)
     }
 }
 
@@ -191,8 +201,8 @@ pub fn run_file(script: fs::RealPathBuf) -> Result<()> {
     dbg!(&source_code);
     let tokens = lexer::tokenize(&source_code)?;
     dbg!(&tokens);
-    let exp = parser::parse_expr(&tokens)?;
-    dbg!(&exp);
+    let parsed_file = parser::parse_script(&source_code)?;
+    dbg!(&parsed_file);
     Ok(())
 }
 
@@ -259,7 +269,7 @@ mod tests {
         );
 
         lexer_test!(
-            fibbonacci,
+            factorial,
             "
 (define (factorial n)
     (if (= n 0 )
@@ -297,5 +307,86 @@ mod tests {
                 Token::RParen,
             ]
         );
+    }
+
+    mod parser {
+        use super::super::*;
+        use parser::{list, Expression};
+
+        /// macro to setup test boilerplate for parser::parse_script
+        macro_rules! parser_test {
+            ($fn_name:ident, $code:literal, $expected:expr) => {
+                #[test]
+                fn $fn_name() -> Result<()> {
+                    let exps = parser::parse_script($code)?;
+                    assert_eq!(exps, $expected);
+                    Ok(())
+                }
+            };
+        }
+
+        /// tests with singular expressions
+        mod expr {
+            use super::*;
+
+            parser_test!(empty, "", vec![]);
+
+            parser_test!(symbol, "test", vec![Expression::sym("test")]);
+
+            parser_test!(integer, "42", vec![Expression::Integer(42)]);
+
+            parser_test!(empty_nested_lists, "(())", vec![list![list![]]]);
+
+            parser_test!(
+                multiplication,
+                "(* (+ 1 2) (- 5 3))",
+                vec![list![
+                    Expression::sym("*"),
+                    list![
+                        Expression::sym("+"),
+                        Expression::Integer(1),
+                        Expression::Integer(2),
+                    ],
+                    list![
+                        Expression::sym("-"),
+                        Expression::Integer(5),
+                        Expression::Integer(3),
+                    ]
+                ]]
+            );
+
+            parser_test!(
+                factorial,
+                "(define (factorial n)
+            (if (= n 0 ) 1 (* n (factorial (- n 1)))))",
+                vec![list![
+                    Expression::sym("define"),
+                    list![Expression::sym("factorial"), Expression::sym("n"),],
+                    list![
+                        Expression::sym("if"),
+                        list![
+                            Expression::sym("="),
+                            Expression::sym("n"),
+                            Expression::Integer(0),
+                        ],
+                        Expression::Integer(1),
+                        list![
+                            Expression::sym("*"),
+                            Expression::sym("n"),
+                            list![
+                                Expression::sym("factorial"),
+                                list![
+                                    Expression::sym("-"),
+                                    Expression::sym("n"),
+                                    Expression::Integer(1),
+                                ],
+                            ],
+                        ],
+                    ],
+                ]]
+            );
+        }
+
+        mod script {}
     }
 }
