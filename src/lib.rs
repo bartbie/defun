@@ -1,4 +1,6 @@
 use anyhow::{anyhow, bail, ensure, Error, Result};
+use itertools::Itertools;
+use tap::prelude::*;
 
 pub mod builtins;
 pub mod env;

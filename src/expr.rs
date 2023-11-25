@@ -1,12 +1,20 @@
 use super::*;
+use env::Env;
+use variantly::Variantly;
 
-#[derive(Debug, Clone, Eq, PartialEq)]
+pub type Proc = fn(&[Expression], &mut Env) -> Result<Expression>;
+
+// TODO
+// pub struct SList(pub Vec<Expression>);
+// pub struct QList(pub Vec<Expression>);
+
+#[derive(Variantly, Debug, Clone, Eq, PartialEq)]
 pub enum Expression {
     Symbol(String),
-    Integer(i64), // TODO add floats later
+    Integer(i64),
     Bool(bool),
     List(Vec<Expression>),
-    Lambda(fn(&[Expression]) -> Result<Expression>),
+    Lambda(Proc),
     Void,
 }
 
@@ -19,8 +27,6 @@ impl Expression {
         Self::List(vec![])
     }
 }
-
-type Lambda = fn(&[Expression]) -> Result<Expression>;
 
 impl From<()> for Expression {
     fn from(_: ()) -> Self {
@@ -46,8 +52,8 @@ impl From<Vec<Expression>> for Expression {
     }
 }
 
-impl From<Lambda> for Expression {
-    fn from(value: Lambda) -> Self {
+impl From<Proc> for Expression {
+    fn from(value: Proc) -> Self {
         Expression::Lambda(value)
     }
 }
@@ -88,9 +94,8 @@ impl TryFrom<Expression> for Vec<Expression> {
     }
 }
 
-impl TryFrom<Expression> for Lambda {
+impl TryFrom<Expression> for Proc {
     type Error = Error;
-
     fn try_from(value: Expression) -> Result<Self, Self::Error> {
         if let Expression::Lambda(f) = value {
             Ok(f)

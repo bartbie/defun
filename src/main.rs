@@ -1,7 +1,7 @@
 use anyhow::Result;
 use clap::Parser;
 use defun::run;
-use std::path::PathBuf;
+use std::{path::PathBuf, rc::Rc};
 
 // TODO: create proper subcommands structure here
 #[derive(Parser, Debug)]
