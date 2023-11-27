@@ -65,36 +65,57 @@ pub mod special {
         let [cond, left, right] = rest else {
             bail!("Ill-formed expression!")
         };
-        let test = eval_cond(cond, env)?;
+        let (_, test) = eval_cond(cond, env)?;
+
         eval(if test { left } else { right }, env)
     }
 
     /// In Scheme ifs just check if condition is equal to `false`,
     /// no actual type coercion is happening.
-    fn eval_cond(elem: &Expression, env: &mut Env) -> Result<bool> {
-        // PERF: cloning list can be costly,
-        // convert to separate Option maybe
-        let mut elem = elem.clone();
-        while elem.is_list() {
-            elem = eval(&elem, env)?;
-        }
+    fn eval_cond(exp: &Expression, env: &mut Env) -> Result<(Expression, bool)> {
+        let exp = eval(exp, env)?;
 
-        match &elem {
-            Expression::Symbol(sym) => eval_cond(&get_sym(sym, env)?, env),
-            Expression::Bool(b) => Ok(*b),
-            _ => Ok(true),
+        let b = match exp {
+            Expression::Bool(b) => b,
+            _ => true,
+        };
+
+        Ok((exp, b))
+    }
+
+    pub fn eval_and(rest: &[Expression], env: &mut Env) -> Result<Expression> {
+        let [left, right] = rest else {
+            bail!("Ill-formed expression!")
+        };
+
+        let left = eval_cond(left, env)?;
+        if left.1 {
+            let right = eval_cond(right, env)?;
+            if right.1 {
+                Ok(right.0)
+            } else {
+                Ok(left.0)
+            }
+        } else {
+            Ok(left.0)
+        }
+    }
+
+    pub fn eval_or(rest: &[Expression], env: &mut Env) -> Result<Expression> {
+        let [left, right] = rest else {
+            bail!("Ill-formed expression!")
+        };
+
+        let (eval_left, test) = eval_cond(left, env)?;
+        if test {
+            Ok(eval_left)
+        } else {
+            let (eval_right, _) = eval_cond(right, env)?;
+            Ok(eval_right)
         }
     }
 
     pub fn eval_set(_rest: &[Expression], _env: &mut Env) -> Result<Expression> {
-        todo!()
-    }
-
-    pub fn eval_and(_rest: &[Expression], _env: &mut Env) -> Result<Expression> {
-        todo!()
-    }
-
-    pub fn eval_or(_rest: &[Expression], _env: &mut Env) -> Result<Expression> {
         todo!()
     }
 }
@@ -141,39 +162,85 @@ pub fn eval(exp: &Expression, env: &mut Env) -> Result<Expression> {
 mod tests {
     use super::*;
 
+    fn test_eval_expr(code: &str) -> Result<Expression> {
+        let tokens = parser::parse_single_expr(code)?;
+        eval(&tokens, &mut Env::new_global())
+    }
+
     #[test]
-    fn addition() -> Result<()> {
-        let code = "(+ 2 3)";
-        let expected = 5;
-        let result = {
-            let tokens = parser::parse_single_expr(code)?;
-            eval(&tokens, &mut Env::new_global())?
-        };
-        assert_eq!(result.unwrap_integer(), expected);
+    fn number() -> Result<()> {
+        let number = 25;
+        let result = test_eval_expr(&25.to_string())?;
+        assert_eq!(result.unwrap_integer(), number);
         Ok(())
     }
 
     #[test]
-    fn multiplication() -> Result<()> {
-        let code = "(* 3 5)";
-        let expected = 15;
-        let result = {
-            let tokens = parser::parse_single_expr(code)?;
-            eval(&tokens, &mut Env::new_global())?
-        };
-        assert_eq!(result.unwrap_integer(), expected);
+    fn symbol() -> Result<()> {
+        let symbol = "+";
+        let result = test_eval_expr(symbol)?;
+        assert_eq!(
+            // INFO: while this is not normally guaranteed to be equal due to LLVM shenanigans,
+            // we put that pointer address in the expression at runtime so they should always be the same.
+            result.unwrap_lambda() as usize,
+            builtins::math::add as usize
+        );
         Ok(())
     }
 
     #[test]
-    fn multiplication_nested() -> Result<()> {
-        let code = "(* (+ 1 2) (+ 5 3))";
-        let expected = 24;
-        let result = {
-            let tokens = parser::parse_single_expr(code)?;
-            eval(&tokens, &mut Env::new_global())?
-        };
-        assert_eq!(result.unwrap_integer(), expected);
+    fn bool() -> Result<()> {
+        let val = true;
+        let result = test_eval_expr(if val { "#t" } else { "#f" })?;
+        assert_eq!(result.unwrap_bool(), val);
+        Ok(())
+    }
+
+    #[test]
+    fn if_true() -> Result<()> {
+        let code = "(if #t (+ 5 3) (* 2 3))";
+        let result = test_eval_expr(code)?;
+        assert_eq!(result.unwrap_integer(), 8);
+        Ok(())
+    }
+
+    #[test]
+    fn if_false() -> Result<()> {
+        let code = "(if #f (+ 5 3) (* 2 3))";
+        let result = test_eval_expr(code)?;
+        assert_eq!(result.unwrap_integer(), 6);
+        Ok(())
+    }
+
+    #[test]
+    fn or_left() -> Result<()> {
+        let code = "(or #t 2)";
+        let result = test_eval_expr(code)?;
+        assert!(result.unwrap_bool());
+        Ok(())
+    }
+
+    #[test]
+    fn or_right() -> Result<()> {
+        let code = "(or #f 3)";
+        let result = test_eval_expr(code)?;
+        assert_eq!(result.unwrap_integer(), 3);
+        Ok(())
+    }
+
+    #[test]
+    fn and_left() -> Result<()> {
+        let code = "(and #f 4)";
+        let result = test_eval_expr(code)?;
+        assert!(!result.unwrap_bool());
+        Ok(())
+    }
+
+    #[test]
+    fn and_right() -> Result<()> {
+        let code = "(and #t 5)";
+        let result = test_eval_expr(code)?;
+        assert_eq!(result.unwrap_integer(), 5);
         Ok(())
     }
 }

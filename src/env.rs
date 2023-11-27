@@ -23,7 +23,8 @@ impl Env {
         Self::new().tap_mut(|env| {
             env.set_proc("+", math::add)
                 .set_proc("*", math::mul)
-                .set_proc("-", math::sub);
+                .set_proc("-", math::sub)
+                .set_proc("=", math::eq);
         })
     }
 
