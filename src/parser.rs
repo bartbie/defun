@@ -14,6 +14,8 @@ fn parse_atom(token: &Token) -> Expression {
         Token::Symbol(s) => match s.as_str() {
             "#t" | "#true" => Expression::Bool(true),
             "#f" | "#false" => Expression::Bool(false),
+            // inspired by Gambit
+            "#!v" | "#!void" => Expression::Void,
             _ => Expression::Symbol(s.clone()),
         },
         _ => panic!("Received a token not convertible to an atom!"),

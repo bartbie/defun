@@ -14,7 +14,8 @@ impl Env {
     }
 
     fn set_proc(&mut self, name: &str, proc: Proc) -> &mut Self {
-        self.set(name, Expression::Lambda(proc));
+        self.set(name, Expression::Lambda(proc))
+            .expect("used only in global!");
         self
     }
 
@@ -42,7 +43,7 @@ impl Env {
         }
     }
 
-    pub fn set(&mut self, name: &str, val: Expression) -> Option<Expression> {
-        self.vars.insert(name.to_owned(), val)
+    pub fn set(&mut self, name: &str, val: Expression) -> Result<Option<Expression>> {
+        Ok(self.vars.insert(name.to_owned(), val))
     }
 }

@@ -7,7 +7,7 @@ fn get_sym(sym: &str, env: &mut Env) -> Result<Expression> {
 }
 
 /// special forms that require different evaluation than normal procedures
-pub mod special {
+mod special {
     use std::str::FromStr;
 
     use super::*;
@@ -27,7 +27,7 @@ pub mod special {
             Ok(match s {
                 "if" => Self::If,
                 "define" => Self::Define,
-                "set" => Self::Set,
+                "set!" => Self::Set,
                 "and" => Self::And,
                 "or" => Self::Or,
                 _ => return Err(()),
@@ -57,7 +57,7 @@ pub mod special {
             bail!("Expected identifier!")
         };
         let val = eval(exp, env)?;
-        env.set(name, val);
+        env.set(name, val)?;
         Ok(Expression::Void)
     }
 
@@ -115,8 +115,17 @@ pub mod special {
         }
     }
 
-    pub fn eval_set(_rest: &[Expression], _env: &mut Env) -> Result<Expression> {
-        todo!()
+    pub fn eval_set(rest: &[Expression], env: &mut Env) -> Result<Expression> {
+        let [name, new_val] = rest else {
+            bail!("Ill-formed expression!")
+        };
+        let Expression::Symbol(name) = name else {
+            bail!("Identifier expected!")
+        };
+
+        let new_val = eval(new_val, env)?;
+        env.set(name, new_val)?;
+        Ok(Expression::Void)
     }
 }
 
@@ -147,7 +156,6 @@ fn eval_list(list: &[Expression], env: &mut Env) -> Result<Expression> {
 }
 
 pub fn eval(exp: &Expression, env: &mut Env) -> Result<Expression> {
-    dbg!(&exp);
     Ok(match exp {
         Expression::Integer(i) => Expression::Integer(*i),
         Expression::Bool(b) => Expression::Bool(*b),
@@ -158,6 +166,12 @@ pub fn eval(exp: &Expression, env: &mut Env) -> Result<Expression> {
     })
 }
 
+pub fn eval_script(exps: &[Expression], env: &mut Env) -> Result<Expression> {
+    exps.iter()
+        .map(|exp| dbg!(eval(exp, env)))
+        .fold_ok(Expression::Void, |_, e| e)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -165,6 +179,11 @@ mod tests {
     fn test_eval_expr(code: &str) -> Result<Expression> {
         let tokens = parser::parse_single_expr(code)?;
         eval(&tokens, &mut Env::new_global())
+    }
+
+    fn test_eval_script(code: &str) -> Result<Expression> {
+        let tokens = parser::parse_script(code)?;
+        dbg!(eval_script(&tokens, &mut Env::new_global()))
     }
 
     #[test]
@@ -241,6 +260,36 @@ mod tests {
         let code = "(and #t 5)";
         let result = test_eval_expr(code)?;
         assert_eq!(result.unwrap_integer(), 5);
+        Ok(())
+    }
+
+    #[test]
+    fn define() -> Result<()> {
+        let code = "(define x 2)";
+        let result = test_eval_expr(code)?;
+        assert!(matches!(result, Expression::Void));
+        Ok(())
+    }
+
+    #[test]
+    fn define_script() -> Result<()> {
+        let code = "
+(define x 2)
+x";
+        let result = test_eval_script(code)?;
+        assert_eq!(result.unwrap_integer(), 2);
+        Ok(())
+    }
+
+    #[test]
+    fn set() -> Result<()> {
+        let code = "
+(define x 1)
+(set! x 2)
+x
+";
+        let result = test_eval_script(code)?;
+        assert_eq!(result.unwrap_integer(), 2);
         Ok(())
     }
 }
