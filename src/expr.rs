@@ -1,12 +1,45 @@
 use super::*;
 use env::Env;
+use std::{cell::RefCell, rc::Rc};
 use variantly::Variantly;
 
-pub type Proc = fn(&[Expression], &mut Env) -> Result<Expression>;
+pub type Proc = fn(&[Expression], Rc<RefCell<Env>>) -> Result<Expression>;
 
 // TODO
 // pub struct SList(pub Vec<Expression>);
 // pub struct QList(pub Vec<Expression>);
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct Lambda {
+    pub args: Vec<String>,
+    pub body: Rc<Expression>,
+    pub env: Rc<RefCell<Env>>,
+}
+
+impl Lambda {
+    pub fn run(&self, args: &[Expression], outer_env: Rc<RefCell<Env>>) -> Result<Expression> {
+        let args: Vec<_> = args
+            .iter()
+            .map(move |a| eval::eval(a, outer_env.clone()))
+            .collect::<Result<_>>()?;
+        {
+            let passed = args.len();
+            let required = self.args.len();
+            ensure!(
+                passed == required,
+                "This procedure requires {} arguments, {} passed!",
+                required,
+                passed,
+            )
+        };
+        let mut eval_env = Env::child(self.env.clone());
+        for (name, val) in self.args.iter().zip(args) {
+            eval_env.set(name, val)?;
+        }
+        let eval_env = Rc::new(RefCell::new(eval_env));
+        eval::eval(&self.body, eval_env)
+    }
+}
 
 #[derive(Variantly, Debug, Clone, Eq, PartialEq)]
 pub enum Expression {
@@ -14,7 +47,8 @@ pub enum Expression {
     Integer(i64),
     Bool(bool),
     List(Vec<Expression>),
-    Lambda(Proc),
+    Proc(Proc),
+    Lambda(Lambda),
     Void,
 }
 
@@ -54,7 +88,7 @@ impl From<Vec<Expression>> for Expression {
 
 impl From<Proc> for Expression {
     fn from(value: Proc) -> Self {
-        Expression::Lambda(value)
+        Expression::Proc(value)
     }
 }
 
@@ -97,7 +131,7 @@ impl TryFrom<Expression> for Vec<Expression> {
 impl TryFrom<Expression> for Proc {
     type Error = Error;
     fn try_from(value: Expression) -> Result<Self, Self::Error> {
-        if let Expression::Lambda(f) = value {
+        if let Expression::Proc(f) = value {
             Ok(f)
         } else {
             bail!("Not a procedure!")

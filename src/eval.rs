@@ -1,6 +1,9 @@
+use self::special::eval_begin;
+
 use super::*;
 use env::Env;
-use expr::Expression;
+use expr::{Expression, Lambda};
+use std::{cell::RefCell, rc::Rc};
 
 fn get_sym(sym: &str, env: &mut Env) -> Result<Expression> {
     env.get(sym).ok_or(anyhow!("Unbounded symbol: {}!", sym))
@@ -18,6 +21,8 @@ mod special {
         Set,
         And,
         Or,
+        Lambda,
+        Begin,
     }
 
     impl FromStr for SpecialForm {
@@ -30,6 +35,8 @@ mod special {
                 "set!" => Self::Set,
                 "and" => Self::And,
                 "or" => Self::Or,
+                "lambda" => Self::Lambda,
+                "begin" => Self::Begin,
                 _ => return Err(()),
             })
         }
@@ -38,7 +45,7 @@ mod special {
     pub fn eval_special(
         form: SpecialForm,
         rest: &[Expression],
-        env: &mut Env,
+        env: Rc<RefCell<Env>>,
     ) -> Result<Expression> {
         match form {
             SpecialForm::If => eval_if(rest, env),
@@ -46,33 +53,35 @@ mod special {
             SpecialForm::Set => eval_set(rest, env),
             SpecialForm::And => eval_and(rest, env),
             SpecialForm::Or => eval_or(rest, env),
+            SpecialForm::Lambda => eval_lambda(rest, env),
+            SpecialForm::Begin => eval_begin(rest, env),
         }
     }
 
-    pub fn eval_define(rest: &[Expression], env: &mut Env) -> Result<Expression> {
+    pub fn eval_define(rest: &[Expression], env: Rc<RefCell<Env>>) -> Result<Expression> {
         let [sym, exp] = rest else {
             bail!("Ill-formed expression!")
         };
         let Expression::Symbol(name) = sym else {
             bail!("Expected identifier!")
         };
-        let val = eval(exp, env)?;
-        env.set(name, val)?;
+        let val = eval(exp, env.clone())?;
+        env.borrow_mut().set(name, val)?;
         Ok(Expression::Void)
     }
 
-    pub fn eval_if(rest: &[Expression], env: &mut Env) -> Result<Expression> {
+    pub fn eval_if(rest: &[Expression], env: Rc<RefCell<Env>>) -> Result<Expression> {
         let [cond, left, right] = rest else {
             bail!("Ill-formed expression!")
         };
-        let (_, test) = eval_cond(cond, env)?;
+        let (_, test) = eval_cond(cond, env.clone())?;
 
         eval(if test { left } else { right }, env)
     }
 
     /// In Scheme ifs just check if condition is equal to `false`,
     /// no actual type coercion is happening.
-    fn eval_cond(exp: &Expression, env: &mut Env) -> Result<(Expression, bool)> {
+    fn eval_cond(exp: &Expression, env: Rc<RefCell<Env>>) -> Result<(Expression, bool)> {
         let exp = eval(exp, env)?;
 
         let b = match exp {
@@ -83,12 +92,12 @@ mod special {
         Ok((exp, b))
     }
 
-    pub fn eval_and(rest: &[Expression], env: &mut Env) -> Result<Expression> {
+    pub fn eval_and(rest: &[Expression], env: Rc<RefCell<Env>>) -> Result<Expression> {
         let [left, right] = rest else {
             bail!("Ill-formed expression!")
         };
 
-        let left = eval_cond(left, env)?;
+        let left = eval_cond(left, env.clone())?;
         if left.1 {
             let right = eval_cond(right, env)?;
             if right.1 {
@@ -101,12 +110,12 @@ mod special {
         }
     }
 
-    pub fn eval_or(rest: &[Expression], env: &mut Env) -> Result<Expression> {
+    pub fn eval_or(rest: &[Expression], env: Rc<RefCell<Env>>) -> Result<Expression> {
         let [left, right] = rest else {
             bail!("Ill-formed expression!")
         };
 
-        let (eval_left, test) = eval_cond(left, env)?;
+        let (eval_left, test) = eval_cond(left, env.clone())?;
         if test {
             Ok(eval_left)
         } else {
@@ -115,7 +124,7 @@ mod special {
         }
     }
 
-    pub fn eval_set(rest: &[Expression], env: &mut Env) -> Result<Expression> {
+    pub fn eval_set(rest: &[Expression], env: Rc<RefCell<Env>>) -> Result<Expression> {
         let [name, new_val] = rest else {
             bail!("Ill-formed expression!")
         };
@@ -123,13 +132,46 @@ mod special {
             bail!("Identifier expected!")
         };
 
-        let new_val = eval(new_val, env)?;
-        env.set(name, new_val)?;
+        let new_val = eval(new_val, env.clone())?;
+        env.borrow_mut().set(name, new_val)?;
         Ok(Expression::Void)
+    }
+
+    fn check_args(args: &Expression) -> Result<Vec<String>> {
+        match args {
+            Expression::Symbol(s) => Ok(vec![s.clone()]),
+            Expression::List(l) => l
+                .iter()
+                .map(|e| match e {
+                    Expression::Symbol(s) => Ok(s),
+                    _ => bail!("Expected identifier!"),
+                })
+                .fold_ok(vec![], |acc, e| acc.tap_mut(|v| v.push(e.clone()))),
+            _ => bail!("Expected identifier!"),
+        }
+    }
+
+    pub fn eval_lambda(rest: &[Expression], env: Rc<RefCell<Env>>) -> Result<Expression> {
+        let [args, _ignored @ .., body] = rest else {
+            bail!("Ill-formed expression!")
+        };
+        let args = check_args(args)?;
+
+        Ok(Expression::Lambda(Lambda {
+            args,
+            body: Rc::new(body.clone()),
+            env: env.clone(),
+        }))
+    }
+
+    pub fn eval_begin(rest: &[Expression], env: Rc<RefCell<Env>>) -> Result<Expression> {
+        rest.iter()
+            .map(|e| eval(e, env.clone()))
+            .fold_ok(Expression::Void, |_, e| e)
     }
 }
 
-fn eval_list(list: &[Expression], env: &mut Env) -> Result<Expression> {
+fn eval_list(list: &[Expression], env: Rc<RefCell<Env>>) -> Result<Expression> {
     let [head, args @ ..] = list else {
         bail!("Ill-formed expression!")
     };
@@ -143,33 +185,33 @@ fn eval_list(list: &[Expression], env: &mut Env) -> Result<Expression> {
 
     // loop via recursion
     let op = match head {
-        Expression::Symbol(sym) => get_sym(sym, env)?,
-        Expression::List(l) => eval_list(l, env)?,
+        Expression::Symbol(sym) => get_sym(sym, &mut env.borrow_mut())?,
+        Expression::List(l) => eval_list(l, env.clone())?,
         _ => bail!("Operator is not a procedure!"),
     };
 
-    let Expression::Lambda(f) = op else {
-        bail!("Operator is not a procedure!")
-    };
-
-    f(args, env)
+    match op {
+        Expression::Proc(f) => f(args, env),
+        Expression::Lambda(l) => l.run(args, env),
+        _ => bail!("Operator is not a procedure!"),
+    }
 }
 
-pub fn eval(exp: &Expression, env: &mut Env) -> Result<Expression> {
+pub fn eval(exp: &Expression, env: Rc<RefCell<Env>>) -> Result<Expression> {
     Ok(match exp {
+        Expression::Symbol(sym) => get_sym(sym, &mut env.borrow_mut())?,
+        Expression::List(l) => eval_list(l, env)?,
         Expression::Integer(i) => Expression::Integer(*i),
         Expression::Bool(b) => Expression::Bool(*b),
-        Expression::Symbol(sym) => get_sym(sym, env)?,
-        Expression::List(l) => eval_list(l, env)?,
-        Expression::Lambda(fun) => Expression::Lambda(*fun),
         Expression::Void => Expression::Void,
+        // those will happen when evaluating other stuff
+        Expression::Proc(fun) => Expression::Proc(*fun),
+        Expression::Lambda(l) => Expression::Lambda(l.clone()),
     })
 }
 
-pub fn eval_script(exps: &[Expression], env: &mut Env) -> Result<Expression> {
-    exps.iter()
-        .map(|exp| dbg!(eval(exp, env)))
-        .fold_ok(Expression::Void, |_, e| e)
+pub fn eval_script(exps: &[Expression], env: Rc<RefCell<Env>>) -> Result<Expression> {
+    eval_begin(exps, env)
 }
 
 #[cfg(test)]
@@ -178,12 +220,12 @@ mod tests {
 
     fn test_eval_expr(code: &str) -> Result<Expression> {
         let tokens = parser::parse_single_expr(code)?;
-        eval(&tokens, &mut Env::new_global())
+        dbg!(eval(&tokens, Env::new_global_rc()))
     }
 
     fn test_eval_script(code: &str) -> Result<Expression> {
         let tokens = parser::parse_script(code)?;
-        dbg!(eval_script(&tokens, &mut Env::new_global()))
+        dbg!(eval_script(&tokens, Env::new_global_rc()))
     }
 
     #[test]
@@ -199,9 +241,9 @@ mod tests {
         let symbol = "+";
         let result = test_eval_expr(symbol)?;
         assert_eq!(
-            // INFO: while this is not normally guaranteed to be equal due to LLVM shenanigans,
+            // SAFETY: while this is not normally guaranteed to be equal due to LLVM shenanigans,
             // we put that pointer address in the expression at runtime so they should always be the same.
-            result.unwrap_lambda() as usize,
+            result.unwrap_proc() as usize,
             builtins::math::add as usize
         );
         Ok(())
@@ -291,5 +333,66 @@ x
         let result = test_eval_script(code)?;
         assert_eq!(result.unwrap_integer(), 2);
         Ok(())
+    }
+
+    #[test]
+    fn begin() -> Result<()> {
+        let code = "(begin (define x (+ 1 4)) x)";
+        let result = test_eval_expr(code)?;
+        assert_eq!(result.unwrap_integer(), 5);
+        Ok(())
+    }
+
+    #[test]
+    fn begin_empty() -> Result<()> {
+        let code = "(begin)";
+        let result = test_eval_expr(code)?;
+        assert!(result.is_void());
+        Ok(())
+    }
+
+    #[test]
+    fn lambda() -> Result<()> {
+        let code = "((lambda x (+ x 1)) 2)";
+        let result = test_eval_expr(code)?;
+        assert_eq!(result.unwrap_integer(), 3);
+        Ok(())
+    }
+
+    mod scope {
+        use super::*;
+
+        #[test]
+        fn lambda() -> Result<()> {
+            let code = "
+            (define outer
+                (lambda (initial)
+                    (lambda (addend)
+                        (begin
+                            (set! initial (+ initial addend))
+                            initial))))
+            (define counter (outer 5))
+            (counter 7)
+            ";
+            let result = test_eval_script(code)?;
+            assert_eq!(result.unwrap_integer(), 12);
+            Ok(())
+        }
+
+        #[test]
+        fn lambda_global() -> Result<()> {
+            let code = "
+            (define count 2)
+            (define counter
+                    (lambda (addend)
+                        (begin
+                            (set! count (+ count addend))
+                            count)))
+            (counter 7)
+            ";
+            let result = test_eval_script(code)?;
+            assert_eq!(result.unwrap_integer(), 9);
+            Ok(())
+        }
     }
 }

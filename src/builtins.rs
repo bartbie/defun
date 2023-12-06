@@ -2,6 +2,7 @@ use super::*;
 use env::Env;
 use eval::eval;
 use expr::Expression;
+use std::{cell::RefCell, rc::Rc};
 
 /// NOTE: math ops do NOT short-circuit
 pub mod math {
@@ -11,11 +12,11 @@ pub mod math {
 
     #[inline]
     /// Creates an iterator that evals expressions and returns [`Result<i64>`]
-    fn eval_num<'a>(
-        args: &'a [Expression],
-        env: &'a mut Env,
-    ) -> impl Iterator<Item = Result<i64>> + 'a {
-        args.iter().map(|a| eval(a, env)?.try_into())
+    fn eval_num(
+        args: &[Expression],
+        env: Rc<RefCell<Env>>,
+    ) -> impl Iterator<Item = Result<i64>> + '_ {
+        args.iter().map(move |a| eval(a, env.clone())?.try_into())
     }
 
     trait MathFold {
@@ -34,17 +35,17 @@ pub mod math {
         }
     }
 
-    pub fn add(args: &[Expression], env: &mut Env) -> Result<Expression> {
+    pub fn add(args: &[Expression], env: Rc<RefCell<Env>>) -> Result<Expression> {
         eval_num(args, env)
             .math_fold(0, Add::add)
             .map(Expression::Integer)
     }
-    pub fn mul(args: &[Expression], env: &mut Env) -> Result<Expression> {
+    pub fn mul(args: &[Expression], env: Rc<RefCell<Env>>) -> Result<Expression> {
         eval_num(args, env)
             .math_fold(1, Mul::mul)
             .map(Expression::Integer)
     }
-    pub fn sub(args: &[Expression], env: &mut Env) -> Result<Expression> {
+    pub fn sub(args: &[Expression], env: Rc<RefCell<Env>>) -> Result<Expression> {
         // NOTE: I tested on gambit and `(-)` throws an error instead of returning the initial
         // value like other ops.
         // For simplicity i will also just return the initial
@@ -53,11 +54,11 @@ pub mod math {
             .map(Expression::Integer)
     }
 
-    pub fn div(_args: &[Expression], _env: &mut Env) -> Result<Expression> {
+    pub fn div(_args: &[Expression], _env: Rc<RefCell<Env>>) -> Result<Expression> {
         todo!("Division will be implemented when refactored to floats!")
     }
 
-    pub fn eq(args: &[Expression], env: &mut Env) -> Result<Expression> {
+    pub fn eq(args: &[Expression], env: Rc<RefCell<Env>>) -> Result<Expression> {
         eval_num(args, env)
             .math_fold((true, None), |acc, e| match acc {
                 // could be converted into an enum but it's fine
@@ -75,7 +76,7 @@ mod tests {
 
     fn test_eval_expr(code: &str) -> Result<Expression> {
         let tokens = parser::parse_single_expr(code)?;
-        eval(&tokens, &mut Env::new_global())
+        eval(&tokens, Env::new_global_rc())
     }
 
     #[test]

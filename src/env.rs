@@ -2,7 +2,7 @@ use super::*;
 use expr::{Expression, Proc};
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Eq, PartialEq)]
 pub struct Env {
     vars: HashMap<String, Expression>,
     outer: Option<Rc<RefCell<Self>>>,
@@ -14,7 +14,7 @@ impl Env {
     }
 
     fn set_proc(&mut self, name: &str, proc: Proc) -> &mut Self {
-        self.set(name, Expression::Lambda(proc))
+        self.set(name, Expression::Proc(proc))
             .expect("used only in global!");
         self
     }
@@ -29,11 +29,19 @@ impl Env {
         })
     }
 
-    pub fn child(parent: &Rc<RefCell<Self>>) -> Self {
+    pub fn child(parent: Rc<RefCell<Self>>) -> Self {
         Env {
             vars: Default::default(),
-            outer: Some(Rc::clone(parent)),
+            outer: Some(parent),
         }
+    }
+
+    pub fn new_global_rc() -> Rc<RefCell<Self>> {
+        Rc::new(RefCell::new(Self::new_global()))
+    }
+
+    pub fn child_rc(parent: Rc<RefCell<Self>>) -> Rc<RefCell<Self>> {
+        Rc::new(RefCell::new(Self::child(parent)))
     }
 
     pub fn get(&self, name: &str) -> Option<Expression> {
