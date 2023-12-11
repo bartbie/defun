@@ -1,9 +1,7 @@
 // "Any sufficiently complicated C or Fortran program contains an ad hoc, informally-specified, bug-ridden, slow implementation of half of Common Lisp."
 // - Peter Greenspun
 // this lisp parser somehow evolved into poor man's parser combinators
-use super::*;
-use expr::Expression;
-use lexer::Token;
+use crate::{expr::Expression, lexer, lexer::Token};
 use thiserror::Error;
 
 /// Enum representing parser errors.
@@ -44,7 +42,7 @@ fn parse_head(tokens: &[Token]) -> PResult<Option<Expression>, ()> {
         Token::LParen => {
             let l = parse_list(rest).map_err(|_| ())?;
             rest = l.1;
-            Some(Expression::List(l.0))
+            Some(Expression::SList(l.0.into()))
         }
     };
     Ok((result, rest))
@@ -103,7 +101,7 @@ pub fn parse_script(source: &str) -> Result<Vec<Expression>, ParseError> {
 mod tests {
 
     use super::super::*;
-    use expr::{list, Expression};
+    use expr::{s_list, Expression};
 
     /// macro to setup test boilerplate for parser::parse_script
     macro_rules! parser_test {
@@ -131,19 +129,19 @@ mod tests {
 
         parser_test!(neg_float, "-0.12", vec![Expression::num(-0.12)?]);
 
-        parser_test!(empty_nested_lists, "(())", vec![list![list![]]]);
+        parser_test!(empty_nested_lists, "(())", vec![s_list![s_list![]]]);
 
         parser_test!(
             multiplication,
             "(* (+ 1 2) (- 5 3))",
-            vec![list![
+            vec![s_list![
                 Expression::sym("*"),
-                list![
+                s_list![
                     Expression::sym("+"),
                     Expression::num(1.)?,
                     Expression::num(2.)?,
                 ],
-                list![
+                s_list![
                     Expression::sym("-"),
                     Expression::num(5.)?,
                     Expression::num(3.)?,
@@ -155,23 +153,23 @@ mod tests {
             factorial,
             "(define (factorial n)
             (if (= n 0 ) 1 (* n (factorial (- n 1)))))",
-            vec![list![
+            vec![s_list![
                 Expression::sym("define"),
-                list![Expression::sym("factorial"), Expression::sym("n"),],
-                list![
+                s_list![Expression::sym("factorial"), Expression::sym("n"),],
+                s_list![
                     Expression::sym("if"),
-                    list![
+                    s_list![
                         Expression::sym("="),
                         Expression::sym("n"),
                         Expression::num(0.)?,
                     ],
                     Expression::num(1.)?,
-                    list![
+                    s_list![
                         Expression::sym("*"),
                         Expression::sym("n"),
-                        list![
+                        s_list![
                             Expression::sym("factorial"),
-                            list![
+                            s_list![
                                 Expression::sym("-"),
                                 Expression::sym("n"),
                                 Expression::num(1.)?,
@@ -192,23 +190,23 @@ mod tests {
             (if (= n 0 ) 1 (* n (factorial (- n 1)))))
             (factorial 10)",
             vec![
-                list![
+                s_list![
                     Expression::sym("define"),
-                    list![Expression::sym("factorial"), Expression::sym("n"),],
-                    list![
+                    s_list![Expression::sym("factorial"), Expression::sym("n"),],
+                    s_list![
                         Expression::sym("if"),
-                        list![
+                        s_list![
                             Expression::sym("="),
                             Expression::sym("n"),
                             Expression::num(0.)?,
                         ],
                         Expression::num(1.)?,
-                        list![
+                        s_list![
                             Expression::sym("*"),
                             Expression::sym("n"),
-                            list![
+                            s_list![
                                 Expression::sym("factorial"),
-                                list![
+                                s_list![
                                     Expression::sym("-"),
                                     Expression::sym("n"),
                                     Expression::num(1.)?,
@@ -217,7 +215,7 @@ mod tests {
                         ],
                     ],
                 ],
-                list![Expression::sym("factorial"), Expression::num(10.)?,],
+                s_list![Expression::sym("factorial"), Expression::num(10.)?,],
             ]
         );
     }

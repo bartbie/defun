@@ -1,5 +1,7 @@
-use super::*;
-use expr::{Expression, Proc};
+use crate::{
+    expr::{Expression, Proc},
+    prelude::*,
+};
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 #[derive(Debug, Default, Eq, PartialEq)]
@@ -19,7 +21,7 @@ impl Env {
     }
 
     pub fn new_global() -> Self {
-        use builtins::*;
+        use crate::builtins::*;
         Self::new().tap_mut(|env| {
             env.set_proc("+", Proc(math::add))
                 .set_proc("*", Proc(math::mul))

@@ -1,10 +1,10 @@
-use crate::{expr::ExprError, parser::ParseError};
+use crate::{
+    env::Env,
+    expr::{Call, ExprError, Expression, Lambda},
+    parser::ParseError,
+    prelude::*,
+};
 
-use self::special::eval_begin;
-
-use super::*;
-use env::Env;
-use expr::{Call, Expression, Lambda};
 use std::{cell::RefCell, rc::Rc};
 use thiserror::Error;
 
@@ -164,13 +164,14 @@ mod special {
     fn check_args(args: &Expression) -> Result<Vec<String>, EvalError> {
         match args {
             Expression::Symbol(s) => Ok(vec![s.clone()]),
-            Expression::List(l) => l
-                .iter()
-                .map(|e| match e {
-                    Expression::Symbol(s) => Ok(s),
-                    _ => Err(EvalError::ExpectedIdent),
-                })
-                .fold_ok(vec![], |acc, e| acc.tap_mut(|v| v.push(e.clone()))),
+            Expression::SList(l) => {
+                l.0.iter()
+                    .map(|e| match e {
+                        Expression::Symbol(s) => Ok(s),
+                        _ => Err(EvalError::ExpectedIdent),
+                    })
+                    .fold_ok(vec![], |acc, e| acc.tap_mut(|v| v.push(e.clone())))
+            }
             _ => Err(EvalError::ExpectedIdent),
         }
     }
@@ -213,14 +214,14 @@ fn eval_list(list: &[Expression], env: Rc<RefCell<Env>>) -> Result<Expression, E
     // loop via recursion
     let op = match head {
         Expression::Symbol(sym) => get_sym(sym, &mut env.borrow_mut())?,
-        Expression::List(l) => eval_list(l, env.clone())?,
+        Expression::SList(l) => eval_list(&l.0, env.clone())?,
         _ => return Err(EvalError::OpNotProc),
     };
 
     // eval args
     let args: Vec<_> = args
         .iter()
-        .map(|a| eval::eval(a, env.clone()))
+        .map(|a| self::eval(a, env.clone()))
         .collect::<Result<_, _>>()?;
 
     match op {
@@ -233,23 +234,25 @@ fn eval_list(list: &[Expression], env: Rc<RefCell<Env>>) -> Result<Expression, E
 pub fn eval(exp: &Expression, env: Rc<RefCell<Env>>) -> Result<Expression, EvalError> {
     Ok(match exp {
         Expression::Symbol(sym) => get_sym(sym, &mut env.borrow_mut())?,
-        Expression::List(l) => eval_list(l, env)?,
+        Expression::SList(l) => eval_list(&l.0, env)?,
         Expression::Number(i) => Expression::Number(*i),
         Expression::Bool(b) => Expression::Bool(*b),
         Expression::Void => Expression::Void,
         // those will happen when evaluating other stuff
         Expression::Proc(fun) => Expression::Proc(*fun),
         Expression::Lambda(l) => Expression::Lambda(l.clone()),
+        Expression::QList(_) => todo!(),
     })
 }
 
 pub fn eval_script(exps: &[Expression], env: Rc<RefCell<Env>>) -> Result<Expression, EvalError> {
-    eval_begin(exps, env)
+    special::eval_begin(exps, env)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{builtins, parser};
 
     fn test_eval_expr(code: &str) -> Result<Expression, EvalError> {
         let tokens = parser::parse_single_expr(code)?;

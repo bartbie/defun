@@ -1,6 +1,10 @@
-use anyhow::{ensure, Error, Result};
-use itertools::Itertools;
-use tap::prelude::*;
+mod prelude {
+    pub use anyhow::{ensure, Error, Result};
+    pub use itertools::Itertools;
+    pub use tap::prelude::*;
+}
+
+use crate::prelude::*;
 
 pub mod builtins;
 pub mod env;

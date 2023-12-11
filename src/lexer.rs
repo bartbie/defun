@@ -1,6 +1,5 @@
+use crate::prelude::*;
 use ordered_float::NotNan;
-
-use super::*;
 use std::str::FromStr;
 
 #[derive(Debug, Eq, PartialEq)]
@@ -57,6 +56,7 @@ pub fn tokenize(source: &str) -> Vec<Token> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::lexer;
 
     /// macro to setup test boilerplate for lexer::tokenize
     macro_rules! lexer_test {

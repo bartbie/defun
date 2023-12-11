@@ -1,7 +1,5 @@
-use crate::eval::EvalError;
+use crate::{env::Env, eval, eval::EvalError, prelude::*};
 
-use super::*;
-use env::Env;
 use ordered_float::NotNan;
 use std::{cell::RefCell, rc::Rc};
 use thiserror::Error;
@@ -44,10 +42,6 @@ impl From<ProcFn> for Proc {
     }
 }
 
-// TODO
-// pub struct SList(pub Vec<Expression>);
-// pub struct QList(pub Vec<Expression>);
-
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct Lambda {
     pub args: Vec<String>,
@@ -73,12 +67,31 @@ impl Call for Lambda {
     }
 }
 
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct SList(pub Vec<Expression>);
+
+impl From<Vec<Expression>> for SList {
+    fn from(value: Vec<Expression>) -> Self {
+        Self(value)
+    }
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct QList(pub Vec<Expression>);
+
+impl From<Vec<Expression>> for QList {
+    fn from(value: Vec<Expression>) -> Self {
+        Self(value)
+    }
+}
+
 #[derive(Variantly, Debug, Clone, Eq, PartialEq)]
 pub enum Expression {
     Symbol(String),
     Number(NotNan<f64>),
     Bool(bool),
-    List(Vec<Expression>),
+    SList(SList),
+    QList(QList),
     Proc(Proc),
     Lambda(Lambda),
     Void,
@@ -89,8 +102,8 @@ impl Expression {
         Self::Symbol(s.to_owned())
     }
 
-    pub fn new_list() -> Self {
-        Self::List(vec![])
+    pub fn new_s_list() -> Self {
+        Self::SList(vec![].into())
     }
 
     pub fn num(f: f64) -> Result<Self> {
@@ -192,12 +205,7 @@ macro_rules! impl_from {
     };
 }
 
-impl_from!(
-    Vec<Expression>,
-    Expression::List,
-    list_or,
-    ExprError::NotAList
-);
+impl_from!(SList, Expression::SList, s_list_or, ExprError::NotAList);
 
 impl_from!(Lambda, Expression::Lambda, lambda_or, ExprError::NotAProc);
 impl_from!(String, Expression::Symbol, symbol_or, ExprError::NotASym);
@@ -208,26 +216,26 @@ impl_from!(String, Expression::Symbol, symbol_or, ExprError::NotASym);
 /// - Create a [`Expression::List`] containing a given list of elements:
 ///
 /// ```
-/// # use defun::expr::{list, Expression};
+/// # use defun::expr::{s_list, Expression};
 /// # use anyhow::Result;
 /// # fn main() -> Result<()> {
-/// let l = list![Expression::num(1.)?, Expression::sym("2")].unwrap_list();
-/// assert_eq!(l[0], Expression::num(1.)?);
-/// assert_eq!(l[1], Expression::sym("2"));
+/// let l = s_list![Expression::num(1.)?, Expression::sym("2")].unwrap_s_list();
+/// assert_eq!(l.0[0], Expression::num(1.)?);
+/// assert_eq!(l.0[1], Expression::sym("2"));
 /// # Ok(())
 /// # }
 /// ```
 #[macro_export]
-macro_rules! list {
+macro_rules! s_list {
     [] => (
-        Expression::new_list()
+        Expression::new_s_list()
     );
     [$elem:expr; $n:expr] => (
-        Expression::List(vec![$elem; $n])
+        Expression::SList(vec![$elem; $n].into())
     );
     [$($x:expr),+ $(,)?] => (
-        Expression::List(vec![$($x),+])
+        Expression::SList(vec![$($x),+].into())
     );
 }
 
-pub use list;
+pub use s_list;

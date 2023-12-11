@@ -1,6 +1,4 @@
-use super::*;
-use env::Env;
-use expr::Expression;
+use crate::{env::Env, expr::Expression, prelude::*};
 use std::{cell::RefCell, rc::Rc};
 
 /// NOTE: math ops do NOT short-circuit
@@ -22,22 +20,6 @@ pub mod math {
             .map(move |a| a.try_into().map_err(|e: ExprError| e.into()))
     }
 
-    trait MathFold {
-        /// Iterator that folds [`Result<Num>`] via `op` if it's `Ok`.
-        /// Does *NOT* short-circuit like `try_fold` or `fold_ok` as Lisps do not short-circuit their
-        /// math operators.
-        fn math_fold<T>(self, initial: T, op: fn(T, Num) -> T) -> Result<T, EvalError>;
-    }
-
-    impl<I: Iterator<Item = Result<Num, EvalError>>> MathFold for I {
-        #[inline]
-        fn math_fold<T>(self, initial: T, op: fn(T, Num) -> T) -> Result<T, EvalError> {
-            #[allow(clippy::manual_try_fold)] // we cannot short-circuit in here :(
-            self.fold(Some(initial), |acc, e| Some(op(acc?, e.ok()?)))
-                .ok_or(ExprError::NotAList.into())
-        }
-    }
-
     macro_rules! float {
         ($fl:literal) => {
             $fl.try_into().expect("don't put NaN here")
@@ -46,12 +28,12 @@ pub mod math {
 
     pub fn add(args: &[Expression], _env: Rc<RefCell<Env>>) -> Result<Expression, EvalError> {
         numbers(args)
-            .math_fold(float!(0_f64), Add::add)
+            .fold_ok(float!(0_f64), Add::add)
             .map(Expression::Number)
     }
     pub fn mul(args: &[Expression], _env: Rc<RefCell<Env>>) -> Result<Expression, EvalError> {
         numbers(args)
-            .math_fold(float!(1.), Mul::mul)
+            .fold_ok(float!(1.), Mul::mul)
             .map(Expression::Number)
     }
     pub fn sub(args: &[Expression], _env: Rc<RefCell<Env>>) -> Result<Expression, EvalError> {
@@ -59,19 +41,19 @@ pub mod math {
         // value like other ops.
         // For simplicity i will also just return the initial
         numbers(args)
-            .math_fold(float!(0.), Sub::sub)
+            .fold_ok(float!(0.), Sub::sub)
             .map(Expression::Number)
     }
 
     pub fn div(args: &[Expression], _env: Rc<RefCell<Env>>) -> Result<Expression, EvalError> {
         numbers(args)
-            .math_fold(float!(1.), Div::div)
+            .fold_ok(float!(1.), Div::div)
             .map(Expression::Number)
     }
 
     pub fn eq(args: &[Expression], _env: Rc<RefCell<Env>>) -> Result<Expression, EvalError> {
         numbers(args)
-            .math_fold((true, None), |acc, e| match acc {
+            .fold_ok((true, None), |acc, e| match acc {
                 // could be converted into an enum but it's fine
                 (true, None) => (true, Some(e)),
                 (true, Some(i)) => (e == i, Some(e)),
@@ -84,6 +66,7 @@ pub mod math {
 #[cfg(test)]
 mod tests {
     use crate::eval::{eval, EvalError};
+    use crate::parser;
 
     use super::*;
 
