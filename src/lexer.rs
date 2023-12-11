@@ -27,7 +27,7 @@ impl Token {
 }
 
 impl FromStr for Token {
-    type Err = Error;
+    type Err = std::convert::Infallible;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Ok(match s {
             "(" => Token::LParen,
@@ -45,12 +45,12 @@ impl FromStr for Token {
     }
 }
 
-pub fn tokenize(source: &str) -> Result<Vec<Token>> {
+pub fn tokenize(source: &str) -> Vec<Token> {
     source
         .replace('(', " ( ")
         .replace(')', " ) ")
         .split_whitespace()
-        .map(|lex| lex.parse())
+        .map(|lex| lex.parse().expect("Lexing never fails"))
         .collect()
 }
 
@@ -63,7 +63,7 @@ mod tests {
         ($fn_name:ident, $code:literal, $expected:expr) => {
             #[test]
             fn $fn_name() -> Result<()> {
-                let tokens = lexer::tokenize($code)?;
+                let tokens = lexer::tokenize($code);
                 assert_eq!(tokens, $expected);
                 Ok(())
             }

@@ -4,8 +4,22 @@
 use super::*;
 use expr::Expression;
 use lexer::Token;
+use thiserror::Error;
 
-type PResult<'tok, T, E = Error> = Result<(T, &'tok [Token]), E>;
+/// Enum representing parser errors.
+#[derive(Error, Debug)]
+pub enum ParseError {
+    #[error("Unclosed list!")]
+    UnclosedList,
+    #[error("Unexpected EOF!")]
+    UnexpectedEOF,
+    #[error("unexpected tokens after the expression!")]
+    UnexpectedTokens,
+    #[error("unexpected ')'")]
+    UnexpectedRParen,
+}
+
+type PResult<'tok, T, E = ParseError> = Result<(T, &'tok [Token]), E>;
 
 // a bit type-unsafe but it's fine for now
 fn parse_atom(token: &Token) -> Expression {
@@ -40,7 +54,7 @@ fn parse_list(mut tokens: &[Token]) -> PResult<Vec<Expression>> {
     let mut list: Vec<Expression> = vec![];
     loop {
         let Ok((maybe_exp, rest)) = parse_head(tokens) else {
-            bail!("Unclosed list!")
+            return Err(ParseError::UnclosedList);
         };
         let Some(exp) = maybe_exp else {
             return Ok((list, rest));
@@ -54,25 +68,25 @@ fn parse_list(mut tokens: &[Token]) -> PResult<Vec<Expression>> {
 
 pub fn parse_expr(tokens: &[Token]) -> PResult<Expression> {
     let Ok((res, rest)) = parse_head(tokens) else {
-        bail!("Unexpected EOF!")
+        return Err(ParseError::UnexpectedEOF);
     };
     let Some(exp) = res else {
-        bail!("Unexpected ')'")
+        return Err(ParseError::UnexpectedRParen);
     };
     Ok((exp, rest))
 }
 
-pub fn parse_single_expr(source: &str) -> Result<Expression> {
-    let tokens = lexer::tokenize(source)?;
+pub fn parse_single_expr(source: &str) -> Result<Expression, ParseError> {
+    let tokens = lexer::tokenize(source);
     let (exp, rest) = parse_expr(&tokens)?;
     if !rest.is_empty() {
-        bail!("Unexpected tokens after the expression!")
+        return Err(ParseError::UnexpectedTokens);
     }
     Ok(exp)
 }
 
-pub fn parse_script(source: &str) -> Result<Vec<Expression>> {
-    let tokens = lexer::tokenize(source)?;
+pub fn parse_script(source: &str) -> Result<Vec<Expression>, ParseError> {
+    let tokens = lexer::tokenize(source);
     let mut expressions = vec![];
     let mut unparsed: &[Token] = &tokens;
 

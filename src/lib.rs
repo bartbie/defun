@@ -1,4 +1,4 @@
-use anyhow::{anyhow, bail, ensure, Error, Result};
+use anyhow::{ensure, Error, Result};
 use itertools::Itertools;
 use tap::prelude::*;
 
@@ -44,7 +44,7 @@ pub mod fs {
 pub fn run_file(script: fs::RealPathBuf) -> Result<()> {
     let source_code = script.read()?;
     dbg!(&source_code);
-    let tokens = lexer::tokenize(&source_code)?;
+    let tokens = lexer::tokenize(&source_code);
     dbg!(&tokens);
     let parsed_file = parser::parse_script(&source_code)?;
     dbg!(&parsed_file);
@@ -55,9 +55,20 @@ pub fn run_repl() -> Result<()> {
     todo!("later, for now running files")
 }
 
-pub fn run(script: Option<fs::RealPathBuf>) -> Result<()> {
-    match script {
-        Some(path) => run_file(path),
-        None => run_repl(),
+#[derive(Debug)]
+pub enum RunMode {
+    Script(fs::RealPathBuf),
+    REPL,
+}
+
+#[derive(Debug)]
+pub struct RunOpts {
+    pub mode: RunMode,
+}
+
+pub fn run(opts: RunOpts) -> Result<()> {
+    match opts.mode {
+        RunMode::Script(path) => run_file(path),
+        RunMode::REPL => run_repl(),
     }
 }

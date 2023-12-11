@@ -1,12 +1,13 @@
 use super::*;
 use env::Env;
-use eval::eval;
 use expr::Expression;
 use std::{cell::RefCell, rc::Rc};
 
 /// NOTE: math ops do NOT short-circuit
 pub mod math {
     use ordered_float::NotNan;
+
+    use crate::{eval::EvalError, expr::ExprError};
 
     use super::*;
 
@@ -15,27 +16,25 @@ pub mod math {
     type Num = NotNan<f64>;
 
     #[inline]
-    /// Creates an iterator that evals expressions and returns [`Result<i64>`]
-    fn eval_num(
-        args: &[Expression],
-        env: Rc<RefCell<Env>>,
-    ) -> impl Iterator<Item = Result<Num>> + '_ {
-        args.iter().map(move |a| eval(a, env.clone())?.try_into())
+    /// Creates an iterator that evals expressions and returns [`Result<Num>`]
+    fn numbers(args: &[Expression]) -> impl Iterator<Item = Result<Num, EvalError>> + '_ {
+        args.iter()
+            .map(move |a| a.try_into().map_err(|e: ExprError| e.into()))
     }
 
     trait MathFold {
-        /// Iterator that folds [`Result<i64>`] via `op` if it's `Ok`.
+        /// Iterator that folds [`Result<Num>`] via `op` if it's `Ok`.
         /// Does *NOT* short-circuit like `try_fold` or `fold_ok` as Lisps do not short-circuit their
         /// math operators.
-        fn math_fold<T>(self, initial: T, op: fn(T, Num) -> T) -> Result<T>;
+        fn math_fold<T>(self, initial: T, op: fn(T, Num) -> T) -> Result<T, EvalError>;
     }
 
-    impl<I: Iterator<Item = Result<Num>>> MathFold for I {
+    impl<I: Iterator<Item = Result<Num, EvalError>>> MathFold for I {
         #[inline]
-        fn math_fold<T>(self, initial: T, op: fn(T, Num) -> T) -> Result<T> {
+        fn math_fold<T>(self, initial: T, op: fn(T, Num) -> T) -> Result<T, EvalError> {
             #[allow(clippy::manual_try_fold)] // we cannot short-circuit in here :(
             self.fold(Some(initial), |acc, e| Some(op(acc?, e.ok()?)))
-                .ok_or(anyhow!("Not a number!")) // TODO: obviously unify the errors into proper types
+                .ok_or(ExprError::NotAList.into())
         }
     }
 
@@ -45,31 +44,33 @@ pub mod math {
         };
     }
 
-    pub fn add(args: &[Expression], env: Rc<RefCell<Env>>) -> Result<Expression> {
-        eval_num(args, env)
+    pub fn add(args: &[Expression], _env: Rc<RefCell<Env>>) -> Result<Expression, EvalError> {
+        numbers(args)
             .math_fold(float!(0_f64), Add::add)
             .map(Expression::Number)
     }
-    pub fn mul(args: &[Expression], env: Rc<RefCell<Env>>) -> Result<Expression> {
-        eval_num(args, env)
+    pub fn mul(args: &[Expression], _env: Rc<RefCell<Env>>) -> Result<Expression, EvalError> {
+        numbers(args)
             .math_fold(float!(1.), Mul::mul)
             .map(Expression::Number)
     }
-    pub fn sub(args: &[Expression], env: Rc<RefCell<Env>>) -> Result<Expression> {
+    pub fn sub(args: &[Expression], _env: Rc<RefCell<Env>>) -> Result<Expression, EvalError> {
         // NOTE: I tested on gambit and `(-)` throws an error instead of returning the initial
         // value like other ops.
         // For simplicity i will also just return the initial
-        eval_num(args, env)
+        numbers(args)
             .math_fold(float!(0.), Sub::sub)
             .map(Expression::Number)
     }
 
-    pub fn div(_args: &[Expression], _env: Rc<RefCell<Env>>) -> Result<Expression> {
-        todo!("Division will be implemented when refactored to floats!")
+    pub fn div(args: &[Expression], _env: Rc<RefCell<Env>>) -> Result<Expression, EvalError> {
+        numbers(args)
+            .math_fold(float!(1.), Div::div)
+            .map(Expression::Number)
     }
 
-    pub fn eq(args: &[Expression], env: Rc<RefCell<Env>>) -> Result<Expression> {
-        eval_num(args, env)
+    pub fn eq(args: &[Expression], _env: Rc<RefCell<Env>>) -> Result<Expression, EvalError> {
+        numbers(args)
             .math_fold((true, None), |acc, e| match acc {
                 // could be converted into an enum but it's fine
                 (true, None) => (true, Some(e)),
@@ -82,9 +83,11 @@ pub mod math {
 
 #[cfg(test)]
 mod tests {
+    use crate::eval::{eval, EvalError};
+
     use super::*;
 
-    fn test_eval_expr(code: &str) -> Result<Expression> {
+    fn test_eval_expr(code: &str) -> Result<Expression, EvalError> {
         let tokens = parser::parse_single_expr(code)?;
         eval(&tokens, Env::new_global_rc())
     }

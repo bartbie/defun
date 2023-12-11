@@ -14,18 +14,17 @@ impl Env {
     }
 
     fn set_proc(&mut self, name: &str, proc: Proc) -> &mut Self {
-        self.set(name, Expression::Proc(proc))
-            .expect("used only in global!");
+        self.set(name, Expression::Proc(proc));
         self
     }
 
     pub fn new_global() -> Self {
         use builtins::*;
         Self::new().tap_mut(|env| {
-            env.set_proc("+", math::add)
-                .set_proc("*", math::mul)
-                .set_proc("-", math::sub)
-                .set_proc("=", math::eq);
+            env.set_proc("+", Proc(math::add))
+                .set_proc("*", Proc(math::mul))
+                .set_proc("-", Proc(math::sub))
+                .set_proc("=", Proc(math::eq));
         })
     }
 
@@ -51,7 +50,7 @@ impl Env {
         }
     }
 
-    pub fn set(&mut self, name: &str, val: Expression) -> Result<Option<Expression>> {
-        Ok(self.vars.insert(name.to_owned(), val))
+    pub fn set(&mut self, name: &str, val: Expression) -> Option<Expression> {
+        self.vars.insert(name.to_owned(), val)
     }
 }

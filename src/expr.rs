@@ -1,10 +1,48 @@
+use crate::eval::EvalError;
+
 use super::*;
 use env::Env;
 use ordered_float::NotNan;
 use std::{cell::RefCell, rc::Rc};
+use thiserror::Error;
 use variantly::Variantly;
 
-pub type Proc = fn(&[Expression], Rc<RefCell<Env>>) -> Result<Expression>;
+#[derive(Error, Debug)]
+pub enum ExprError {
+    #[error("Not a List!")]
+    NotAList,
+    #[error("Not a Procedure!")]
+    NotAProc,
+    #[error("Not a Number!")]
+    NotANum,
+    #[error("Not Void!")]
+    NotVoid,
+    #[error("Not a Bool!")]
+    NotABool,
+    #[error("Not a Symbol!")]
+    NotASym,
+}
+
+pub trait Call {
+    fn call(&self, args: &[Expression], env: Rc<RefCell<Env>>) -> Result<Expression, EvalError>;
+}
+
+type ProcFn = fn(&[Expression], Rc<RefCell<Env>>) -> Result<Expression, EvalError>;
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+pub struct Proc(pub ProcFn);
+
+impl Call for Proc {
+    fn call(&self, args: &[Expression], env: Rc<RefCell<Env>>) -> Result<Expression, EvalError> {
+        self.0(args, env)
+    }
+}
+
+impl From<ProcFn> for Proc {
+    fn from(value: fn(&[Expression], Rc<RefCell<Env>>) -> Result<Expression, EvalError>) -> Self {
+        Self(value)
+    }
+}
 
 // TODO
 // pub struct SList(pub Vec<Expression>);
@@ -17,25 +55,18 @@ pub struct Lambda {
     pub env: Rc<RefCell<Env>>,
 }
 
-impl Lambda {
-    pub fn run(&self, args: &[Expression], outer_env: Rc<RefCell<Env>>) -> Result<Expression> {
-        let args: Vec<_> = args
-            .iter()
-            .map(move |a| eval::eval(a, outer_env.clone()))
-            .collect::<Result<_>>()?;
+impl Call for Lambda {
+    fn call(&self, args: &[Expression], _env: Rc<RefCell<Env>>) -> Result<Expression, EvalError> {
         {
             let passed = args.len();
             let required = self.args.len();
-            ensure!(
-                passed == required,
-                "This procedure requires {} arguments, {} passed!",
-                required,
-                passed,
-            )
+            if passed != required {
+                return Err(EvalError::WrongArgCount { required, passed });
+            }
         };
         let mut eval_env = Env::child(self.env.clone());
         for (name, val) in self.args.iter().zip(args) {
-            eval_env.set(name, val)?;
+            eval_env.set(name, val.clone());
         }
         let eval_env = Rc::new(RefCell::new(eval_env));
         eval::eval(&self.body, eval_env)
@@ -67,94 +98,109 @@ impl Expression {
     }
 }
 
+// copy types
+
+macro_rules! impl_from_copy {
+    ($type:ty, $body:expr, $unwrap_or:ident, $ref_unwrap_or:ident, $err:expr) => {
+        impl From<$type> for Expression {
+            fn from(value: $type) -> Self {
+                $body(value)
+            }
+        }
+
+        impl From<&$type> for Expression {
+            fn from(value: &$type) -> Self {
+                $body(*value)
+            }
+        }
+
+        impl TryFrom<Expression> for $type {
+            type Error = ExprError;
+
+            fn try_from(value: Expression) -> Result<Self, Self::Error> {
+                value.$unwrap_or($err)
+            }
+        }
+
+        impl TryFrom<&Expression> for $type {
+            type Error = ExprError;
+
+            fn try_from(value: &Expression) -> Result<Self, Self::Error> {
+                value.$ref_unwrap_or($err).map(|x| *x)
+            }
+        }
+    };
+}
+
 impl From<()> for Expression {
     fn from(_: ()) -> Self {
         Expression::Void
     }
 }
 
-impl From<NotNan<f64>> for Expression {
-    fn from(value: NotNan<f64>) -> Self {
-        Expression::Number(value)
-    }
-}
-
-impl From<bool> for Expression {
-    fn from(value: bool) -> Self {
-        Expression::Bool(value)
-    }
-}
-
-impl From<Vec<Expression>> for Expression {
-    fn from(value: Vec<Expression>) -> Self {
-        Expression::List(value)
-    }
-}
-
-impl From<Proc> for Expression {
-    fn from(value: Proc) -> Self {
-        Expression::Proc(value)
-    }
-}
-
-impl TryFrom<Expression> for NotNan<f64> {
-    type Error = Error;
-
-    fn try_from(value: Expression) -> Result<Self, Self::Error> {
-        if let Expression::Number(i) = value {
-            Ok(i)
-        } else {
-            bail!("Not a number!")
-        }
-    }
-}
-
 impl TryFrom<Expression> for () {
-    type Error = ();
+    type Error = ExprError;
 
     fn try_from(value: Expression) -> Result<Self, Self::Error> {
         if let Expression::Void = value {
             Ok(())
         } else {
-            Err(())
+            Err(ExprError::NotVoid)
         }
     }
 }
 
-impl TryFrom<Expression> for Vec<Expression> {
-    type Error = Error;
+impl_from_copy!(
+    NotNan<f64>,
+    Expression::Number,
+    number_or,
+    number_ref_or,
+    ExprError::NotANum
+);
 
-    fn try_from(value: Expression) -> Result<Self, Self::Error> {
-        if let Expression::List(l) = value {
-            Ok(l)
-        } else {
-            bail!("Not a list!")
+impl_from_copy!(
+    Proc,
+    Expression::Proc,
+    proc_or,
+    proc_ref_or,
+    ExprError::NotAProc
+);
+impl_from_copy!(
+    bool,
+    Expression::Bool,
+    bool_or,
+    bool_ref_or,
+    ExprError::NotABool
+);
+
+// non-copy types
+macro_rules! impl_from {
+    ($type:ty, $body:expr, $unwrap_or:ident, $err:expr) => {
+        impl From<$type> for Expression {
+            fn from(value: $type) -> Self {
+                $body(value)
+            }
         }
-    }
+
+        impl TryFrom<Expression> for $type {
+            type Error = ExprError;
+
+            fn try_from(value: Expression) -> Result<Self, Self::Error> {
+                value.$unwrap_or($err)
+            }
+        }
+    };
 }
 
-impl TryFrom<Expression> for Proc {
-    type Error = Error;
-    fn try_from(value: Expression) -> Result<Self, Self::Error> {
-        if let Expression::Proc(f) = value {
-            Ok(f)
-        } else {
-            bail!("Not a procedure!")
-        }
-    }
-}
+impl_from!(
+    Vec<Expression>,
+    Expression::List,
+    list_or,
+    ExprError::NotAList
+);
 
-impl TryFrom<Expression> for bool {
-    type Error = Error;
-
-    fn try_from(value: Expression) -> Result<Self, Self::Error> {
-        if let Expression::Bool(b) = value {
-            Ok(b)
-        } else {
-            bail!("Not a procedure!")
-        }
-    }
-}
+impl_from!(Lambda, Expression::Lambda, lambda_or, ExprError::NotAProc);
+impl_from!(String, Expression::Symbol, symbol_or, ExprError::NotASym);
 
 /// Creates a [`Expression::List`] like `vec!`.
 ///
