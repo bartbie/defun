@@ -10,7 +10,7 @@ type PResult<'tok, T, E = Error> = Result<(T, &'tok [Token]), E>;
 // a bit type-unsafe but it's fine for now
 fn parse_atom(token: &Token) -> Expression {
     match &token {
-        Token::Integer(i) => Expression::Integer(*i),
+        Token::Number(i) => Expression::Number(*i),
         Token::Symbol(s) => match s.as_str() {
             "#t" | "#true" => Expression::Bool(true),
             "#f" | "#false" => Expression::Bool(false),
@@ -26,7 +26,7 @@ fn parse_head(tokens: &[Token]) -> PResult<Option<Expression>, ()> {
     let (first, mut rest) = tokens.split_first().ok_or(())?;
     let result = match &first {
         Token::RParen => None,
-        Token::Integer(_) | Token::Symbol(_) => Some(parse_atom(first)),
+        Token::Number(_) | Token::Symbol(_) => Some(parse_atom(first)),
         Token::LParen => {
             let l = parse_list(rest).map_err(|_| ())?;
             rest = l.1;
@@ -111,7 +111,11 @@ mod tests {
 
         parser_test!(symbol, "test", vec![Expression::sym("test")]);
 
-        parser_test!(integer, "42", vec![Expression::Integer(42)]);
+        parser_test!(number, "42", vec![Expression::num(42.)?]);
+
+        parser_test!(float, "3.12", vec![Expression::num(3.12)?]);
+
+        parser_test!(neg_float, "-0.12", vec![Expression::num(-0.12)?]);
 
         parser_test!(empty_nested_lists, "(())", vec![list![list![]]]);
 
@@ -122,13 +126,13 @@ mod tests {
                 Expression::sym("*"),
                 list![
                     Expression::sym("+"),
-                    Expression::Integer(1),
-                    Expression::Integer(2),
+                    Expression::num(1.)?,
+                    Expression::num(2.)?,
                 ],
                 list![
                     Expression::sym("-"),
-                    Expression::Integer(5),
-                    Expression::Integer(3),
+                    Expression::num(5.)?,
+                    Expression::num(3.)?,
                 ]
             ]]
         );
@@ -145,9 +149,9 @@ mod tests {
                     list![
                         Expression::sym("="),
                         Expression::sym("n"),
-                        Expression::Integer(0),
+                        Expression::num(0.)?,
                     ],
-                    Expression::Integer(1),
+                    Expression::num(1.)?,
                     list![
                         Expression::sym("*"),
                         Expression::sym("n"),
@@ -156,7 +160,7 @@ mod tests {
                             list![
                                 Expression::sym("-"),
                                 Expression::sym("n"),
-                                Expression::Integer(1),
+                                Expression::num(1.)?,
                             ],
                         ],
                     ],
@@ -182,9 +186,9 @@ mod tests {
                         list![
                             Expression::sym("="),
                             Expression::sym("n"),
-                            Expression::Integer(0),
+                            Expression::num(0.)?,
                         ],
-                        Expression::Integer(1),
+                        Expression::num(1.)?,
                         list![
                             Expression::sym("*"),
                             Expression::sym("n"),
@@ -193,13 +197,13 @@ mod tests {
                                 list![
                                     Expression::sym("-"),
                                     Expression::sym("n"),
-                                    Expression::Integer(1),
+                                    Expression::num(1.)?,
                                 ],
                             ],
                         ],
                     ],
                 ],
-                list![Expression::sym("factorial"), Expression::Integer(10),],
+                list![Expression::sym("factorial"), Expression::num(10.)?,],
             ]
         );
     }

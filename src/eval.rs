@@ -201,7 +201,7 @@ pub fn eval(exp: &Expression, env: Rc<RefCell<Env>>) -> Result<Expression> {
     Ok(match exp {
         Expression::Symbol(sym) => get_sym(sym, &mut env.borrow_mut())?,
         Expression::List(l) => eval_list(l, env)?,
-        Expression::Integer(i) => Expression::Integer(*i),
+        Expression::Number(i) => Expression::Number(*i),
         Expression::Bool(b) => Expression::Bool(*b),
         Expression::Void => Expression::Void,
         // those will happen when evaluating other stuff
@@ -230,9 +230,9 @@ mod tests {
 
     #[test]
     fn number() -> Result<()> {
-        let number = 25;
+        let number = 25_f64;
         let result = test_eval_expr(&25.to_string())?;
-        assert_eq!(result.unwrap_integer(), number);
+        assert_eq!(result.unwrap_number(), number);
         Ok(())
     }
 
@@ -261,7 +261,7 @@ mod tests {
     fn if_true() -> Result<()> {
         let code = "(if #t (+ 5 3) (* 2 3))";
         let result = test_eval_expr(code)?;
-        assert_eq!(result.unwrap_integer(), 8);
+        assert_eq!(result.unwrap_number(), 8_f64);
         Ok(())
     }
 
@@ -269,7 +269,7 @@ mod tests {
     fn if_false() -> Result<()> {
         let code = "(if #f (+ 5 3) (* 2 3))";
         let result = test_eval_expr(code)?;
-        assert_eq!(result.unwrap_integer(), 6);
+        assert_eq!(result.unwrap_number(), 6_f64);
         Ok(())
     }
 
@@ -285,7 +285,7 @@ mod tests {
     fn or_right() -> Result<()> {
         let code = "(or #f 3)";
         let result = test_eval_expr(code)?;
-        assert_eq!(result.unwrap_integer(), 3);
+        assert_eq!(result.unwrap_number(), 3_f64);
         Ok(())
     }
 
@@ -301,7 +301,7 @@ mod tests {
     fn and_right() -> Result<()> {
         let code = "(and #t 5)";
         let result = test_eval_expr(code)?;
-        assert_eq!(result.unwrap_integer(), 5);
+        assert_eq!(result.unwrap_number(), 5_f64);
         Ok(())
     }
 
@@ -319,7 +319,7 @@ mod tests {
 (define x 2)
 x";
         let result = test_eval_script(code)?;
-        assert_eq!(result.unwrap_integer(), 2);
+        assert_eq!(result.unwrap_number(), 2_f64);
         Ok(())
     }
 
@@ -331,7 +331,7 @@ x";
 x
 ";
         let result = test_eval_script(code)?;
-        assert_eq!(result.unwrap_integer(), 2);
+        assert_eq!(result.unwrap_number(), 2_f64);
         Ok(())
     }
 
@@ -339,7 +339,7 @@ x
     fn begin() -> Result<()> {
         let code = "(begin (define x (+ 1 4)) x)";
         let result = test_eval_expr(code)?;
-        assert_eq!(result.unwrap_integer(), 5);
+        assert_eq!(result.unwrap_number(), 5_f64);
         Ok(())
     }
 
@@ -355,7 +355,7 @@ x
     fn lambda() -> Result<()> {
         let code = "((lambda x (+ x 1)) 2)";
         let result = test_eval_expr(code)?;
-        assert_eq!(result.unwrap_integer(), 3);
+        assert_eq!(result.unwrap_number(), 3_f64);
         Ok(())
     }
 
@@ -375,7 +375,7 @@ x
             (counter 7)
             ";
             let result = test_eval_script(code)?;
-            assert_eq!(result.unwrap_integer(), 12);
+            assert_eq!(result.unwrap_number(), 12_f64);
             Ok(())
         }
 
@@ -391,7 +391,7 @@ x
             (counter 7)
             ";
             let result = test_eval_script(code)?;
-            assert_eq!(result.unwrap_integer(), 9);
+            assert_eq!(result.unwrap_number(), 9_f64);
             Ok(())
         }
     }

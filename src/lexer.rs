@@ -1,3 +1,5 @@
+use ordered_float::NotNan;
+
 use super::*;
 use std::str::FromStr;
 
@@ -9,7 +11,7 @@ pub enum Token {
     RParen,
     /// integer literal
     //TODO: add float support
-    Integer(i64),
+    Number(NotNan<f64>),
     /// Any other group of characters
     Symbol(String),
 }
@@ -17,6 +19,10 @@ pub enum Token {
 impl Token {
     pub fn sym(s: &str) -> Self {
         Self::Symbol(s.to_owned())
+    }
+
+    pub fn num(f: f64) -> Result<Self> {
+        Ok(Self::Number(NotNan::new(f)?))
     }
 }
 
@@ -29,8 +35,8 @@ impl FromStr for Token {
             // rip experimental feature for now
             // i if let Ok(i_parsed) = i.parse::<i64>() => Token::Integer(i_parsed)
             x => {
-                if let Ok(i) = x.parse::<i64>() {
-                    Token::Integer(i)
+                if let Ok(f) = x.parse::<NotNan<f64>>() {
+                    Token::Number(f)
                 } else {
                     Token::Symbol(x.to_owned())
                 }
@@ -68,7 +74,11 @@ mod tests {
 
     lexer_test!(symbol, "test", vec![Token::sym("test")]);
 
-    lexer_test!(integer, "42", vec![Token::Integer(42)]);
+    lexer_test!(integer, "42", vec![Token::num(42.)?]);
+
+    lexer_test!(float, "5.10", vec![Token::num(5.10)?]);
+
+    lexer_test!(neq_float, "-3.20", vec![Token::num(-3.20)?]);
 
     lexer_test!(
         empty_nested_lists,
@@ -84,13 +94,13 @@ mod tests {
             Token::sym("*"),
             Token::LParen,
             Token::sym("+"),
-            Token::Integer(1),
-            Token::Integer(2),
+            Token::num(1.)?,
+            Token::num(2.)?,
             Token::RParen,
             Token::LParen,
             Token::sym("-"),
-            Token::Integer(5),
-            Token::Integer(3),
+            Token::num(5.)?,
+            Token::num(3.)?,
             Token::RParen,
             Token::RParen,
         ]
@@ -114,9 +124,9 @@ mod tests {
             Token::LParen,
             Token::sym("="),
             Token::sym("n"),
-            Token::Integer(0),
+            Token::num(0.)?,
             Token::RParen,
-            Token::Integer(1),
+            Token::num(1.)?,
             Token::LParen,
             Token::sym("*"),
             Token::sym("n"),
@@ -125,7 +135,7 @@ mod tests {
             Token::LParen,
             Token::sym("-"),
             Token::sym("n"),
-            Token::Integer(1),
+            Token::num(1.)?,
             Token::RParen,
             Token::RParen,
             Token::RParen,

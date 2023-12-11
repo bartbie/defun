@@ -1,5 +1,6 @@
 use super::*;
 use env::Env;
+use ordered_float::NotNan;
 use std::{cell::RefCell, rc::Rc};
 use variantly::Variantly;
 
@@ -44,7 +45,7 @@ impl Lambda {
 #[derive(Variantly, Debug, Clone, Eq, PartialEq)]
 pub enum Expression {
     Symbol(String),
-    Integer(i64),
+    Number(NotNan<f64>),
     Bool(bool),
     List(Vec<Expression>),
     Proc(Proc),
@@ -60,6 +61,10 @@ impl Expression {
     pub fn new_list() -> Self {
         Self::List(vec![])
     }
+
+    pub fn num(f: f64) -> Result<Self> {
+        Ok(Self::Number(NotNan::new(f)?))
+    }
 }
 
 impl From<()> for Expression {
@@ -68,9 +73,9 @@ impl From<()> for Expression {
     }
 }
 
-impl From<i64> for Expression {
-    fn from(value: i64) -> Self {
-        Expression::Integer(value)
+impl From<NotNan<f64>> for Expression {
+    fn from(value: NotNan<f64>) -> Self {
+        Expression::Number(value)
     }
 }
 
@@ -92,11 +97,11 @@ impl From<Proc> for Expression {
     }
 }
 
-impl TryFrom<Expression> for i64 {
+impl TryFrom<Expression> for NotNan<f64> {
     type Error = Error;
 
     fn try_from(value: Expression) -> Result<Self, Self::Error> {
-        if let Expression::Integer(i) = value {
+        if let Expression::Number(i) = value {
             Ok(i)
         } else {
             bail!("Not a number!")
@@ -158,11 +163,13 @@ impl TryFrom<Expression> for bool {
 ///
 /// ```
 /// # use defun::expr::{list, Expression};
-/// let Expression::List(l) = list![Expression::Integer(1), Expression::sym("2")] else {
-///    panic!("Couldn't create Expression::List!");
-/// };
-/// assert_eq!(l[0], Expression::Integer(1));
+/// # use anyhow::Result;
+/// # fn main() -> Result<()> {
+/// let l = list![Expression::num(1.)?, Expression::sym("2")].unwrap_list();
+/// assert_eq!(l[0], Expression::num(1.)?);
 /// assert_eq!(l[1], Expression::sym("2"));
+/// # Ok(())
+/// # }
 /// ```
 #[macro_export]
 macro_rules! list {
