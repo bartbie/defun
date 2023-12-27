@@ -4,8 +4,6 @@ mod prelude {
     pub use tap::prelude::*;
 }
 
-use crate::prelude::*;
-
 pub mod builtins;
 pub mod env;
 pub mod eval;
@@ -13,56 +11,46 @@ pub mod expr;
 pub mod lexer;
 pub mod parser;
 
-pub mod fs {
-    use super::*;
-    use anyhow::Context;
-    use std::path::PathBuf;
+use crate::prelude::*;
+use std::path::{Path, PathBuf};
+use std::{fs, io};
+use thiserror::Error;
 
-    #[derive(Debug)]
-    pub struct RealPathBuf(pub PathBuf);
-
-    impl RealPathBuf {
-        /// read the file
-        pub fn read(&self) -> Result<String> {
-            std::fs::read_to_string(&self.0).with_context(|| {
-                format!(
-                    "Failed to read file: {}",
-                    self.0
-                        .to_str()
-                        .expect("Unexpected UTF-8 error while opening a file!")
-                )
-            })
-        }
-    }
-
-    impl TryFrom<PathBuf> for RealPathBuf {
-        type Error = Error;
-
-        fn try_from(value: PathBuf) -> Result<Self, Self::Error> {
-            ensure!(&value.is_file(), "File provided doesn't exist!");
-            Ok(Self(value))
-        }
-    }
+#[derive(Error, Debug)]
+pub enum RunError {
+    #[error(transparent)]
+    ParseErr(#[from] parser::ParseError),
+    #[error(transparent)]
+    EvalErr(#[from] eval::EvalError),
+    #[error(transparent)]
+    IOErr(#[from] io::Error),
 }
 
-pub fn run_file(script: fs::RealPathBuf) -> Result<()> {
-    let source_code = script.read()?;
-    dbg!(&source_code);
-    let tokens = lexer::tokenize(&source_code);
-    dbg!(&tokens);
-    let parsed_file = parser::parse_script(&source_code)?;
-    dbg!(&parsed_file);
-    Ok(())
+pub fn eval(code: &str) -> Result<expr::Expression, RunError> {
+    let ast = parser::parse_script(code)?;
+    let script_env = env::Env::new_global_rc();
+    Ok(eval::eval_script(&ast, script_env)?)
 }
 
-pub fn run_repl() -> Result<()> {
+pub fn run_file(path: &Path) -> Result<expr::Expression, RunError> {
+    let code = fs::read_to_string(path)?;
+    eval(&code)
+}
+
+pub fn run_stdin() -> Result<expr::Expression, RunError> {
+    let code = io::read_to_string(io::stdin())?;
+    eval(&code)
+}
+
+pub fn run_repl() -> Result<expr::Expression, RunError> {
     todo!("later, for now running files")
 }
 
 #[derive(Debug)]
 pub enum RunMode {
-    Script(fs::RealPathBuf),
-    REPL,
+    Script(PathBuf),
+    Repl,
+    Stdin,
 }
 
 #[derive(Debug)]
@@ -70,9 +58,10 @@ pub struct RunOpts {
     pub mode: RunMode,
 }
 
-pub fn run(opts: RunOpts) -> Result<()> {
+pub fn run(opts: RunOpts) -> Result<expr::Expression, RunError> {
     match opts.mode {
-        RunMode::Script(path) => run_file(path),
-        RunMode::REPL => run_repl(),
+        RunMode::Script(path) => run_file(&path),
+        RunMode::Repl => run_repl(),
+        RunMode::Stdin => run_stdin(),
     }
 }

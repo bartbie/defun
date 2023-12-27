@@ -5,7 +5,7 @@ use crate::{expr::Expression, lexer, lexer::Token};
 use thiserror::Error;
 
 /// Enum representing parser errors.
-#[derive(Error, Debug)]
+#[derive(Error, Debug, Clone)]
 pub enum ParseError {
     #[error("Unclosed list!")]
     UnclosedList,
@@ -19,64 +19,100 @@ pub enum ParseError {
 
 type PResult<'tok, T, E = ParseError> = Result<(T, &'tok [Token]), E>;
 
-// a bit type-unsafe but it's fine for now
-fn parse_atom(token: &Token) -> Expression {
-    match &token {
-        Token::Number(i) => Expression::Number(*i),
-        Token::Symbol(s) => match s.as_str() {
-            "#t" | "#true" => Expression::Bool(true),
-            "#f" | "#false" => Expression::Bool(false),
-            // inspired by Gambit
-            "#!v" | "#!void" => Expression::Void,
-            _ => Expression::Symbol(s.clone()),
-        },
-        _ => panic!("Received a token not convertible to an atom!"),
+/// module dedicated to parsing a singular Expression
+mod single_expr {
+    use super::*;
+    #[derive(Error, Debug, Clone)]
+    /// implementation error representing `parse_single` errors
+    pub enum Error {
+        #[error("Empty slice!")]
+        EmptySlice,
+        #[error(transparent)]
+        ParseErr(#[from] ParseError),
     }
-}
 
-fn parse_head(tokens: &[Token]) -> PResult<Option<Expression>, ()> {
-    let (first, mut rest) = tokens.split_first().ok_or(())?;
-    let result = match &first {
-        Token::RParen => None,
-        Token::Number(_) | Token::Symbol(_) => Some(parse_atom(first)),
-        Token::LParen => {
-            let l = parse_list(rest).map_err(|_| ())?;
-            rest = l.1;
-            Some(Expression::SList(l.0.into()))
+    impl Error {
+        pub fn on_empty(self, slice_alt: ParseError) -> ParseError {
+            match self {
+                Error::EmptySlice => slice_alt,
+                Error::ParseErr(e) => e.clone(),
+            }
         }
-    };
-    Ok((result, rest))
-}
+    }
 
-fn parse_list(mut tokens: &[Token]) -> PResult<Vec<Expression>> {
-    let mut list: Vec<Expression> = vec![];
-    loop {
-        let Ok((maybe_exp, rest)) = parse_head(tokens) else {
-            return Err(ParseError::UnclosedList);
+    /// Reqursively parse the tokens until an [`Expression`] is parsed,
+    /// the [`Token::RParen`] is hit or an error occurs
+    pub fn parse(tokens: &[Token]) -> PResult<Option<Expression>, Error> {
+        let (first, mut rest) = tokens.split_first().ok_or(Error::EmptySlice)?;
+        let result = match &first {
+            Token::RParen => None,
+            Token::Number(_) | Token::Symbol(_) => Some(parse_atom(first)),
+            Token::LParen => {
+                let l = parse_s_list(rest)?;
+                rest = l.1;
+                Some(Expression::SList(l.0.into()))
+            }
+            Token::Apos => {
+                let res = parse(rest)?;
+                rest = res.1;
+                let quoted = res.0.ok_or(ParseError::UnexpectedRParen)?;
+                Some(Expression::quote(quoted))
+            }
         };
-        let Some(exp) = maybe_exp else {
-            return Ok((list, rest));
-        };
-        list.push(exp);
-        tokens = rest;
+        Ok((result, rest))
+    }
+
+    // helper methods for parse_req
+
+    #[inline]
+    /// Parses an atom into [`Expression`].
+    /// panics when passedn a variant other than
+    /// [`Token::Number`] or [`Token::Symbol`]
+    fn parse_atom(token: &Token) -> Expression {
+        // a bit type-unsafe but it's fine for now
+        match &token {
+            Token::Number(i) => Expression::Number(*i),
+            Token::Symbol(s) => match s.as_str() {
+                "#t" | "#true" => Expression::Bool(true),
+                "#f" | "#false" => Expression::Bool(false),
+                // inspired by Gambit
+                "#!v" | "#!void" => Expression::Void,
+                _ => Expression::Symbol(s.clone()),
+            },
+            _ => panic!("Received a token not convertible to an atom!"),
+        }
+    }
+
+    #[inline]
+    /// Parses an slist into [`Expression`].
+    fn parse_s_list(mut tokens: &[Token]) -> PResult<Vec<Expression>> {
+        let mut list: Vec<Expression> = vec![];
+        loop {
+            let (maybe_exp, rest) =
+                parse(tokens).map_err(|e| e.on_empty(ParseError::UnclosedList))?;
+            let Some(exp) = maybe_exp else {
+                return Ok((list, rest));
+            };
+            list.push(exp);
+            tokens = rest;
+        }
     }
 }
 
 // this API could probably be much improved
 
-pub fn parse_expr(tokens: &[Token]) -> PResult<Expression> {
-    let Ok((res, rest)) = parse_head(tokens) else {
-        return Err(ParseError::UnexpectedEOF);
-    };
+pub fn parse_tokens(tokens: &[Token]) -> PResult<Expression> {
+    let (res, rest) =
+        single_expr::parse(tokens).map_err(|e| e.on_empty(ParseError::UnexpectedEOF))?;
     let Some(exp) = res else {
         return Err(ParseError::UnexpectedRParen);
     };
     Ok((exp, rest))
 }
 
-pub fn parse_single_expr(source: &str) -> Result<Expression, ParseError> {
+pub fn parse_expr(source: &str) -> Result<Expression, ParseError> {
     let tokens = lexer::tokenize(source);
-    let (exp, rest) = parse_expr(&tokens)?;
+    let (exp, rest) = parse_tokens(&tokens)?;
     if !rest.is_empty() {
         return Err(ParseError::UnexpectedTokens);
     }
@@ -89,7 +125,7 @@ pub fn parse_script(source: &str) -> Result<Vec<Expression>, ParseError> {
     let mut unparsed: &[Token] = &tokens;
 
     while !unparsed.is_empty() {
-        let (exp, rest) = parse_expr(unparsed)?;
+        let (exp, rest) = parse_tokens(unparsed)?;
         expressions.push(exp);
         unparsed = rest;
     }
@@ -178,6 +214,17 @@ mod tests {
                     ],
                 ],
             ]]
+        );
+
+        parser_test!(quote, "'12", vec![Expression::quote(Expression::num(12.)?)]);
+
+        parser_test!(
+            quoted_list,
+            "'(x y)",
+            vec![Expression::quote(s_list![
+                Expression::sym("x"),
+                Expression::sym("y"),
+            ]),]
         );
     }
 

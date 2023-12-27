@@ -15,6 +15,7 @@ impl Env {
         Self::default()
     }
 
+    #[inline]
     fn set_proc(&mut self, name: &str, proc: Proc) -> &mut Self {
         self.set(name, Expression::Proc(proc));
         self
@@ -26,7 +27,10 @@ impl Env {
             env.set_proc("+", Proc(math::add))
                 .set_proc("*", Proc(math::mul))
                 .set_proc("-", Proc(math::sub))
-                .set_proc("=", Proc(math::eq));
+                .set_proc("/", Proc(math::div))
+                .set_proc("=", Proc(math::eq))
+                .set_proc("eval", Proc(core::eval))
+                .set_proc("exit", Proc(core::exit));
         })
     }
 

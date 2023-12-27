@@ -1,4 +1,5 @@
 use crate::{
+    builtins::StdErr,
     env::Env,
     expr::{Call, ExprError, Expression, Lambda},
     parser::ParseError,
@@ -24,6 +25,10 @@ pub enum EvalError {
     ParseErr(#[from] ParseError),
     #[error(transparent)]
     ExprErr(#[from] ExprError),
+    #[error(transparent)]
+    StdErr(#[from] StdErr),
+    #[error("Exited with signal {0}.")]
+    ExitSignal(u8),
 }
 
 fn get_sym(sym: &str, env: &mut Env) -> Result<Expression, EvalError> {
@@ -44,6 +49,7 @@ mod special {
         Or,
         Lambda,
         Begin,
+        Quote,
     }
 
     impl FromStr for SpecialForm {
@@ -58,6 +64,7 @@ mod special {
                 "or" => Self::Or,
                 "lambda" => Self::Lambda,
                 "begin" => Self::Begin,
+                "quote" => Self::Quote,
                 _ => return Err(()),
             })
         }
@@ -76,7 +83,15 @@ mod special {
             SpecialForm::Or => eval_or(rest, env),
             SpecialForm::Lambda => eval_lambda(rest, env),
             SpecialForm::Begin => eval_begin(rest, env),
+            SpecialForm::Quote => eval_quote(rest),
         }
+    }
+
+    pub fn eval_quote(rest: &[Expression]) -> Result<Expression, EvalError> {
+        let [sym] = rest else {
+            return Err(EvalError::IllFormedExpr);
+        };
+        Ok(Expression::quote(sym.clone()))
     }
 
     pub fn eval_define(
@@ -241,7 +256,7 @@ pub fn eval(exp: &Expression, env: Rc<RefCell<Env>>) -> Result<Expression, EvalE
         // those will happen when evaluating other stuff
         Expression::Proc(fun) => Expression::Proc(*fun),
         Expression::Lambda(l) => Expression::Lambda(l.clone()),
-        Expression::QList(_) => todo!(),
+        Expression::Quoted(q) => Expression::Quoted(q.clone()),
     })
 }
 
@@ -252,10 +267,10 @@ pub fn eval_script(exps: &[Expression], env: Rc<RefCell<Env>>) -> Result<Express
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{builtins, parser};
+    use crate::{builtins, expr::Quoted, parser, s_list};
 
     fn test_eval_expr(code: &str) -> Result<Expression, EvalError> {
-        let tokens = parser::parse_single_expr(code)?;
+        let tokens = parser::parse_expr(code)?;
         dbg!(eval(&tokens, Env::new_global_rc()))
     }
 
@@ -442,6 +457,58 @@ x
         )";
         let result = test_eval_expr(code)?;
         assert_eq!(result.unwrap_number(), 4.);
+        Ok(())
+    }
+
+    #[test]
+    fn quote() -> Result<()> {
+        let code = "(quote (x y))";
+        let result = test_eval_expr(code)?;
+        assert_eq!(
+            result.unwrap_quoted(),
+            Quoted::new(s_list![Expression::sym("x"), Expression::sym("y")])
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn quoted_math() -> Result<()> {
+        let code = "(quote (+ 3 4))";
+        let result = test_eval_expr(code)?;
+        assert_eq!(
+            result.unwrap_quoted(),
+            Quoted::new(s_list![
+                Expression::sym("+"),
+                Expression::num(3.)?,
+                Expression::num(4.)?
+            ])
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn eval_vars() -> Result<()> {
+        let code = "
+        (define x 7)
+        (define y 10)
+        (define z (quote (+ x y)))
+        (eval z)
+        ";
+        let result = test_eval_script(code)?;
+        assert_eq!(result.unwrap_number(), 17.);
+        Ok(())
+    }
+
+    #[test]
+    fn eval_vars_apos() -> Result<()> {
+        let code = "
+        (define x 7)
+        (define y 10)
+        (define z '(- x y))
+        (eval z)
+        ";
+        let result = test_eval_script(code)?;
+        assert_eq!(result.unwrap_number(), -3.);
         Ok(())
     }
 }

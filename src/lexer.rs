@@ -9,10 +9,12 @@ pub enum Token {
     /// )
     RParen,
     /// integer literal
-    //TODO: add float support
     Number(NotNan<f64>),
     /// Any other group of characters
     Symbol(String),
+    //TODO
+    /// '
+    Apos,
 }
 
 impl Token {
@@ -31,8 +33,7 @@ impl FromStr for Token {
         Ok(match s {
             "(" => Token::LParen,
             ")" => Token::RParen,
-            // rip experimental feature for now
-            // i if let Ok(i_parsed) = i.parse::<i64>() => Token::Integer(i_parsed)
+            "'" => Token::Apos,
             x => {
                 if let Ok(f) = x.parse::<NotNan<f64>>() {
                     Token::Number(f)
@@ -48,6 +49,7 @@ pub fn tokenize(source: &str) -> Vec<Token> {
     source
         .replace('(', " ( ")
         .replace(')', " ) ")
+        .replace('\'', " ' ")
         .split_whitespace()
         .map(|lex| lex.parse().expect("Lexing never fails"))
         .collect()
@@ -142,5 +144,15 @@ mod tests {
             Token::RParen,
             Token::RParen,
         ]
+    );
+
+    lexer_test!(quote, "'12", vec![Token::Apos, Token::num(12.)?]);
+
+    lexer_test!(neg_value, "-10", vec![Token::num(-10.)?]);
+
+    lexer_test!(
+        neg_symbol_and_atom,
+        "- 10",
+        vec![Token::sym("-"), Token::num(10.)?]
     );
 }

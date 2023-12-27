@@ -1,4 +1,3 @@
-use anyhow::Result;
 use clap::Parser;
 use defun::{run, RunMode, RunOpts};
 use std::path::PathBuf;
@@ -7,14 +6,20 @@ use std::path::PathBuf;
 #[derive(Parser, Debug)]
 struct Args {
     /// script file to run
-    file: PathBuf,
+    file: Option<PathBuf>,
 }
 
-fn main() -> Result<()> {
+fn main() {
     let args = Args::parse();
-    dbg!(&args);
-    // TODO: change this to clap's App::error
-    run(RunOpts {
-        mode: RunMode::Script(args.file.try_into()?),
-    })
+    let mode = if let Some(path) = args.file {
+        RunMode::Script(path)
+    } else if atty::is(atty::Stream::Stdin) {
+        RunMode::Stdin
+    } else {
+        RunMode::Repl
+    };
+    match run(RunOpts { mode }) {
+        Ok(last) => println!("{}", last),
+        Err(err) => eprintln!("{}", err),
+    }
 }

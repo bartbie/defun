@@ -1,7 +1,11 @@
 use crate::{env::Env, eval, eval::EvalError, prelude::*};
 
 use ordered_float::NotNan;
-use std::{cell::RefCell, rc::Rc};
+use std::{
+    cell::RefCell,
+    fmt::{self, Display},
+    rc::Rc,
+};
 use thiserror::Error;
 use variantly::Variantly;
 
@@ -19,6 +23,8 @@ pub enum ExprError {
     NotABool,
     #[error("Not a Symbol!")]
     NotASym,
+    #[error("Not a Quoted!")]
+    NotAQuoted,
 }
 
 pub trait Call {
@@ -29,6 +35,12 @@ type ProcFn = fn(&[Expression], Rc<RefCell<Env>>) -> Result<Expression, EvalErro
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub struct Proc(pub ProcFn);
+
+impl Display for Proc {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "<procedure {}>", self.0 as usize)
+    }
+}
 
 impl Call for Proc {
     fn call(&self, args: &[Expression], env: Rc<RefCell<Env>>) -> Result<Expression, EvalError> {
@@ -47,6 +59,12 @@ pub struct Lambda {
     pub args: Vec<String>,
     pub body: Rc<Expression>,
     pub env: Rc<RefCell<Env>>,
+}
+
+impl Display for Lambda {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "({}) {}", self.args.iter().join(" "), *self.body)
+    }
 }
 
 impl Call for Lambda {
@@ -70,6 +88,12 @@ impl Call for Lambda {
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct SList(pub Vec<Expression>);
 
+impl Display for SList {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "({})", self.0.iter().join(" "))
+    }
+}
+
 impl From<Vec<Expression>> for SList {
     fn from(value: Vec<Expression>) -> Self {
         Self(value)
@@ -77,10 +101,22 @@ impl From<Vec<Expression>> for SList {
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub struct QList(pub Vec<Expression>);
+pub struct Quoted(pub Box<Expression>);
 
-impl From<Vec<Expression>> for QList {
-    fn from(value: Vec<Expression>) -> Self {
+impl Display for Quoted {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "'{}", *self.0)
+    }
+}
+
+impl Quoted {
+    pub fn new(expr: Expression) -> Self {
+        Self(Box::new(expr))
+    }
+}
+
+impl From<Box<Expression>> for Quoted {
+    fn from(value: Box<Expression>) -> Self {
         Self(value)
     }
 }
@@ -91,7 +127,7 @@ pub enum Expression {
     Number(NotNan<f64>),
     Bool(bool),
     SList(SList),
-    QList(QList),
+    Quoted(Quoted),
     Proc(Proc),
     Lambda(Lambda),
     Void,
@@ -108,6 +144,32 @@ impl Expression {
 
     pub fn num(f: f64) -> Result<Self> {
         Ok(Self::Number(NotNan::new(f)?))
+    }
+
+    pub fn quote(expr: impl Into<Expression>) -> Self {
+        Self::Quoted(Quoted::new(expr.into()))
+    }
+
+    #[inline]
+    /// Returns [`Self::Symbol`] used for quote
+    pub fn qt() -> Self {
+        Self::Symbol("quote".to_owned())
+    }
+}
+
+impl Display for Expression {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Expression::Symbol(s) => write!(f, "{}", s),
+            Expression::Number(n) => write!(f, "{}", n),
+            Expression::Bool(true) => write!(f, "#true"),
+            Expression::Bool(false) => write!(f, "#false"),
+            Expression::Void => write!(f, "#!void"),
+            Expression::SList(l) => write!(f, "{}", l),
+            Expression::Quoted(q) => write!(f, "{}", q),
+            Expression::Proc(p) => write!(f, "{}", p),
+            Expression::Lambda(l) => write!(f, "{}", l),
+        }
     }
 }
 
@@ -206,6 +268,7 @@ macro_rules! impl_from {
 }
 
 impl_from!(SList, Expression::SList, s_list_or, ExprError::NotAList);
+impl_from!(Quoted, Expression::Quoted, quoted_or, ExprError::NotAQuoted);
 
 impl_from!(Lambda, Expression::Lambda, lambda_or, ExprError::NotAProc);
 impl_from!(String, Expression::Symbol, symbol_or, ExprError::NotASym);
