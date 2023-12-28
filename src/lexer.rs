@@ -1,4 +1,3 @@
-use crate::prelude::*;
 use ordered_float::{FloatIsNan, NotNan};
 use std::str::FromStr;
 
@@ -12,7 +11,6 @@ pub enum Token {
     Number(NotNan<f64>),
     /// Any other group of characters
     Symbol(String),
-    //TODO
     /// '
     Apos,
 }
