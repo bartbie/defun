@@ -150,6 +150,7 @@ pub mod math {
 mod tests {
     use crate::eval::{eval, EvalError};
     use crate::parser;
+    use anyhow::Result;
 
     use super::*;
 

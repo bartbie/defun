@@ -268,6 +268,7 @@ pub fn eval_script(exps: &[Expression], env: Rc<RefCell<Env>>) -> Result<Express
 mod tests {
     use super::*;
     use crate::{builtins, expr::Quoted, parser, s_list};
+    use anyhow::Result;
 
     fn test_eval_expr(code: &str) -> Result<Expression, EvalError> {
         let tokens = parser::parse_expr(code)?;

@@ -137,6 +137,7 @@ pub fn parse_script(source: &str) -> Result<Vec<Expression>, ParseError> {
 mod tests {
 
     use super::super::*;
+    use anyhow::Result;
     use expr::{s_list, Expression};
 
     /// macro to setup test boilerplate for parser::parse_script

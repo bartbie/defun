@@ -1,6 +1,6 @@
 use crate::{env::Env, eval, eval::EvalError, prelude::*};
 
-use ordered_float::NotNan;
+use ordered_float::{FloatIsNan, NotNan};
 use std::{
     cell::RefCell,
     fmt::{self, Display},
@@ -17,6 +17,8 @@ pub enum ExprError {
     NotAProc,
     #[error("Not a Number!")]
     NotANum,
+    #[error("Can't use NaN values for numbers!")]
+    FloatIsNaN(#[from] FloatIsNan),
     #[error("Not Void!")]
     NotVoid,
     #[error("Not a Bool!")]
@@ -142,7 +144,7 @@ impl Expression {
         Self::SList(vec![].into())
     }
 
-    pub fn num(f: f64) -> Result<Self> {
+    pub fn num(f: f64) -> Result<Self, ExprError> {
         Ok(Self::Number(NotNan::new(f)?))
     }
 

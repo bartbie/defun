@@ -1,5 +1,5 @@
 use crate::prelude::*;
-use ordered_float::NotNan;
+use ordered_float::{FloatIsNan, NotNan};
 use std::str::FromStr;
 
 #[derive(Debug, Eq, PartialEq)]
@@ -22,7 +22,7 @@ impl Token {
         Self::Symbol(s.to_owned())
     }
 
-    pub fn num(f: f64) -> Result<Self> {
+    pub fn num(f: f64) -> Result<Self, FloatIsNan> {
         Ok(Self::Number(NotNan::new(f)?))
     }
 }
@@ -64,7 +64,7 @@ mod tests {
     macro_rules! lexer_test {
         ($fn_name:ident, $code:literal, $expected:expr) => {
             #[test]
-            fn $fn_name() -> Result<()> {
+            fn $fn_name() -> Result<(), FloatIsNan> {
                 let tokens = lexer::tokenize($code);
                 assert_eq!(tokens, $expected);
                 Ok(())
