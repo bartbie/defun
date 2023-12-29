@@ -9,6 +9,8 @@ pub mod eval;
 pub mod expr;
 pub mod lexer;
 pub mod parser;
+/// Module representing high-level entry-point of the REPL.
+pub mod repl;
 
 /// Module representing high-level entry-point of the interpreter.
 pub mod interpreter {
@@ -30,9 +32,7 @@ pub mod interpreter {
     pub type Result<T = expr::Expression> = std::result::Result<T, Error>;
 
     pub fn eval(code: &str) -> Result {
-        let ast = parser::parse_script(code)?;
-        let script_env = env::Env::new_global_rc();
-        Ok(eval::eval_script(&ast, script_env)?)
+        eval_with_env(code, env::Env::new_global_rc())
     }
 
     pub fn eval_with_env(code: &str, env: Rc<RefCell<env::Env>>) -> Result {
@@ -47,50 +47,6 @@ pub mod interpreter {
             s
         };
         eval(&code)
-    }
-}
-
-/// Module representing high-level entry-point of the REPL.
-pub mod repl {
-    use thiserror::Error;
-
-    use crate::{env, eval, interpreter};
-
-    pub fn greet() {
-        eprintln!("Welcome to Defun REPL.")
-    }
-
-    #[derive(Error, Debug)]
-    pub enum Error {
-        #[error(transparent)]
-        Readline(#[from] rustyline::error::ReadlineError),
-
-        /// NOTE:
-        /// an ugly hack around the fact that ExitSignal is a just a variant of [`eval::EvalError`]
-        #[error(transparent)]
-        ExitSignal(#[from] eval::EvalError),
-    }
-
-    pub fn run() -> Result<(), Error> {
-        let env = env::Env::new_global_rc();
-        let mut editor = rustyline::DefaultEditor::new()?;
-
-        loop {
-            let readline = editor.readline(">> ");
-            match readline {
-                Ok(line) => match interpreter::eval_with_env(&line, env.clone()) {
-                    Ok(exp) => println!("{}", exp),
-                    Err(err) => {
-                        if let interpreter::Error::EvalErr(x @ eval::EvalError::ExitSignal(_)) = err
-                        {
-                            return Err(x.into());
-                        }
-                        eprintln!("{}", err)
-                    }
-                },
-                Err(err) => return Err(err.into()),
-            }
-        }
     }
 }
 
