@@ -164,7 +164,6 @@ pub struct Opts {
 }
 
 pub fn run(opts: Opts) {
-    dbg!(&opts);
     match glue::run(opts) {
         Ok(o) => {
             if let Some(exp) = o {

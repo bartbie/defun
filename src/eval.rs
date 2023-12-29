@@ -512,4 +512,21 @@ x
         assert_eq!(result.unwrap_number(), -3.);
         Ok(())
     }
+
+    mod recursion {
+        use super::*;
+
+        #[test]
+        fn factorial() -> Result<()> {
+            let code = "
+            (define factorial (lambda n (if (= n 0 )
+                  1
+                  (* n (factorial (- n 1))))))
+            (factorial 5)
+            ";
+            let result = test_eval_script(code)?;
+            assert_eq!(result.unwrap_number(), 120.);
+            Ok(())
+        }
+    }
 }

@@ -11,7 +11,6 @@ struct Args {
 
 fn main() {
     let args = Args::parse();
-    dbg!(&args);
     run(Opts {
         mode: Mode::from(args.file),
     });
