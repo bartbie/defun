@@ -31,22 +31,45 @@ pub mod interpreter {
 
     pub type Result<T = expr::Expression> = std::result::Result<T, Error>;
 
-    pub fn eval(code: &str) -> Result {
-        eval_with_env(code, env::Env::new_global_rc())
-    }
-
     pub fn eval_with_env(code: &str, env: Rc<RefCell<env::Env>>) -> Result {
         let ast = parser::parse_script(code)?;
         Ok(eval::eval_script(&ast, env)?)
     }
 
-    pub fn run(mut source: impl io::Read) -> Result {
-        let code = {
-            let mut s = String::new();
-            source.read_to_string(&mut s)?;
-            s
-        };
-        eval(&code)
+    #[derive(Debug)]
+    pub struct Interpreter {
+        env: Rc<RefCell<env::Env>>,
+    }
+
+    impl Default for Interpreter {
+        fn default() -> Self {
+            Self {
+                env: env::Env::new_global_rc(),
+            }
+        }
+    }
+
+    impl Interpreter {
+        pub fn eval(&mut self, code: &str) -> Result {
+            eval_with_env(code, self.env.clone())
+        }
+
+        pub fn run(&mut self, mut source: impl io::Read) -> Result {
+            let code = {
+                let mut s = String::new();
+                source.read_to_string(&mut s)?;
+                s
+            };
+            self.eval(&code)
+        }
+    }
+
+    pub fn eval(code: &str) -> Result {
+        Interpreter::default().eval(code)
+    }
+
+    pub fn run(source: impl io::Read) -> Result {
+        Interpreter::default().run(source)
     }
 }
 
@@ -54,22 +77,26 @@ pub mod interpreter {
 /// Called glue because it glues [`crate::interpreter`] and [`crate::repl`] together.
 /// Plus it sounds cool.
 mod glue {
-    use crate::{expr, interpreter, repl, Mode, Opts};
+    use crate::{eval, expr, interpreter, repl, Mode, Opts};
     use std::{fs::File, io};
     use thiserror::Error;
 
     #[derive(Error, Debug)]
     pub enum Error {
         #[error(transparent)]
-        Run(#[from] interpreter::Error),
+        Run(interpreter::Error),
         #[error(transparent)]
         Repl(#[from] rustyline::error::ReadlineError),
+        #[error(transparent)]
+        Signal(#[from] eval::Signal),
     }
-    impl From<repl::Error> for Error {
-        fn from(value: repl::Error) -> Self {
-            match value {
-                repl::Error::Readline(r) => r.into(),
-                repl::Error::ExitSignal(x) => interpreter::Error::from(x).into(),
+
+    impl From<interpreter::Error> for Error {
+        fn from(value: interpreter::Error) -> Self {
+            if let interpreter::Error::EvalErr(eval::EvalError::Signal(sig)) = value {
+                Self::Signal(sig)
+            } else {
+                Self::Run(value)
             }
         }
     }
@@ -86,7 +113,8 @@ mod glue {
             Mode::Stdin => interpreter::run(io::stdin()).map(Some)?,
             Mode::Repl => {
                 repl::greet();
-                repl::run().map(|_| None)?
+                let sig = repl::run()?;
+                return Err(sig.into());
             }
         })
     }
@@ -128,11 +156,10 @@ pub fn run(opts: Opts) {
         }
         Err(err) => {
             eprintln!("{}", err);
-            if let glue::Error::Run(interpreter::Error::EvalErr(eval::EvalError::ExitSignal(
-                code,
-            ))) = err
-            {
-                exit(code as i32)
+            if let glue::Error::Signal(sig) = err {
+                match sig {
+                    eval::Signal::ExitSignal(code) => exit(code as i32),
+                }
             }
         }
     }

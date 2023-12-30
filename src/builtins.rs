@@ -18,7 +18,7 @@ macro_rules! float {
 pub mod core {
     use super::*;
 
-    use crate::eval::EvalError;
+    use crate::eval::{EvalError, Signal};
 
     pub fn eval(args: &[Expression], env: Rc<RefCell<Env>>) -> Result<Expression, EvalError> {
         use crate::{eval, expr};
@@ -54,7 +54,7 @@ pub mod core {
                 }
                 .into()
             },
-            EvalError::ExitSignal,
+            |x| Signal::ExitSignal(x).into(),
         ))
     }
 
@@ -148,7 +148,7 @@ pub mod math {
 
 #[cfg(test)]
 mod tests {
-    use crate::eval::{eval, EvalError};
+    use crate::eval::{eval, EvalError, Signal};
     use crate::parser;
     use anyhow::Result;
 
@@ -250,7 +250,10 @@ mod tests {
         fn exit() -> Result<()> {
             let code = "(exit)";
             let result = test_eval_expr(code);
-            assert!(matches!(result.unwrap_err(), EvalError::ExitSignal(0)));
+            assert!(matches!(
+                result.unwrap_err(),
+                EvalError::Signal(Signal::ExitSignal(0))
+            ));
             Ok(())
         }
 
@@ -258,7 +261,10 @@ mod tests {
         fn exit_custom_code() -> Result<()> {
             let code = "(exit 1)";
             let result = test_eval_expr(code);
-            assert!(matches!(result.unwrap_err(), EvalError::ExitSignal(1)));
+            assert!(matches!(
+                result.unwrap_err(),
+                EvalError::Signal(Signal::ExitSignal(1))
+            ));
             Ok(())
         }
 

@@ -10,6 +10,12 @@ use std::{cell::RefCell, rc::Rc};
 use thiserror::Error;
 
 #[derive(Error, Debug)]
+pub enum Signal {
+    #[error("Exited with signal {0}.")]
+    ExitSignal(u8),
+}
+
+#[derive(Error, Debug)]
 pub enum EvalError {
     #[error("Unbound symbol: {0}!")]
     UnboundSymbol(String),
@@ -27,8 +33,8 @@ pub enum EvalError {
     ExprErr(#[from] ExprError),
     #[error(transparent)]
     StdErr(#[from] StdErr),
-    #[error("Exited with signal {0}.")]
-    ExitSignal(u8),
+    #[error(transparent)]
+    Signal(#[from] Signal),
 }
 
 fn get_sym(sym: &str, env: &mut Env) -> Result<Expression, EvalError> {

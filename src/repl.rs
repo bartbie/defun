@@ -1,26 +1,40 @@
+use crate::{eval, interpreter};
+use rustyline::{history::History, Editor, Helper};
+
 const HISTORY_FILE: &str = ".defunhistory";
-
-use thiserror::Error;
-
-use crate::{env, eval, interpreter};
 
 pub fn greet() {
     eprintln!("Welcome to Defun REPL.")
 }
 
-#[derive(Error, Debug)]
-pub enum Error {
-    #[error(transparent)]
-    Readline(#[from] rustyline::error::ReadlineError),
+pub type Error = rustyline::error::ReadlineError;
 
-    /// NOTE:
-    /// an ugly hack around the fact that ExitSignal is a just a variant of [`eval::EvalError`]
-    #[error(transparent)]
-    ExitSignal(#[from] eval::EvalError),
+fn run_line(ip: &mut interpreter::Interpreter, line: &str) -> Option<eval::Signal> {
+    match ip.eval(line) {
+        Ok(exp) => println!("{}", exp),
+        Err(err) => {
+            if let interpreter::Error::EvalErr(eval::EvalError::Signal(sig)) = err {
+                return Some(sig);
+            }
+            eprintln!("Error -- {}", err)
+        }
+    }
+    None
 }
 
-pub fn run() -> Result<(), Error> {
-    let env = env::Env::new_global_rc();
+fn run_loop<H: Helper, I: History>(
+    ip: &mut interpreter::Interpreter,
+    editor: &mut Editor<H, I>,
+) -> Result<eval::Signal, Error> {
+    loop {
+        if let Some(sig) = run_line(ip, &editor.readline(">> ")?) {
+            return Ok(sig);
+        }
+    }
+}
+
+pub fn run() -> Result<eval::Signal, Error> {
+    let mut ip = interpreter::Interpreter::default();
     let mut editor = {
         let config = rustyline::Config::builder()
             .auto_add_history(true)
@@ -28,24 +42,8 @@ pub fn run() -> Result<(), Error> {
             .build();
         rustyline::Editor::<(), _>::with_config(config)?
     };
-    // let mut editor = rustyline::DefaultEditor::new()?;
     _ = editor.load_history(HISTORY_FILE);
-
-    let res = loop {
-        let readline = editor.readline(">> ");
-        match readline {
-            Ok(line) => match interpreter::eval_with_env(&line, env.clone()) {
-                Ok(exp) => println!("{}", exp),
-                Err(err) => {
-                    if let interpreter::Error::EvalErr(x @ eval::EvalError::ExitSignal(_)) = err {
-                        break x.into();
-                    }
-                    eprintln!("Error -- {}", err)
-                }
-            },
-            Err(err) => break err.into(),
-        }
-    };
+    let res = run_loop(&mut ip, &mut editor);
     _ = editor.save_history(HISTORY_FILE);
-    Err(res)
+    res
 }
