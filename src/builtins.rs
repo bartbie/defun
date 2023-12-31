@@ -103,6 +103,9 @@ pub mod math {
             })
         }
     }
+    /*
+     *
+     * */
 
     impl<T> ReduceOk for T where T: Iterator<Item = Result<Num, EvalError>> {}
 
@@ -124,13 +127,16 @@ pub mod math {
         numbers(args)
             .reduce_ok(Sub::sub)
             .map(|e| e.unwrap_or(float!(0.)))
+            .map(|e| if args.len() == 1 { -e } else { e })
             .map(Expression::Number)
     }
 
     pub fn div(args: &[Expression], _env: Rc<RefCell<Env>>) -> Result<Expression, EvalError> {
+        let def: Num = float!(1.);
         numbers(args)
             .reduce_ok(Div::div)
-            .map(|e| e.unwrap_or(float!(1.)))
+            .map(|e| e.unwrap_or(def))
+            .map(|e| if args.len() == 1 { def / e } else { e })
             .map(Expression::Number)
     }
 
@@ -162,69 +168,41 @@ mod tests {
     mod math {
         use super::*;
 
-        #[test]
-        fn addition() -> Result<()> {
-            let code = "(+ 2 3)";
-            let result = test_eval_expr(code)?;
-            assert_eq!(result.unwrap_number(), 5.);
-            Ok(())
+        /// macro to setup test boilerplate for parser::parse_script
+        macro_rules! math_test {
+            ($fn_name:ident, $code:literal, $expected:expr) => {
+                #[test]
+                fn $fn_name() -> Result<()> {
+                    let result = test_eval_expr($code)?;
+                    assert_eq!(result.unwrap_number(), $expected);
+                    Ok(())
+                }
+            };
         }
 
-        #[test]
-        fn substraction() -> Result<()> {
-            let code = "(- 4 3)";
-            let result = test_eval_expr(code)?;
-            assert_eq!(result.unwrap_number(), 1.);
-            Ok(())
-        }
+        math_test!(addition, "(+ 2 3)", 5.);
 
-        #[test]
-        fn substraction_neg() -> Result<()> {
-            let code = "(- 6 10)";
-            let result = test_eval_expr(code)?;
-            assert_eq!(result.unwrap_number(), -4.);
-            Ok(())
-        }
+        math_test!(substraction, "(- 4 3)", 1.);
 
-        #[test]
-        fn multiplication() -> Result<()> {
-            let code = "(* 3 5)";
-            let result = test_eval_expr(code)?;
-            assert_eq!(result.unwrap_number(), 15.);
-            Ok(())
-        }
+        math_test!(substraction_neg, "(- 6 10)", -4.);
 
-        #[test]
-        fn multiplication_nested() -> Result<()> {
-            let code = "(* (+ 1 2) (+ 5 3))";
-            let result = test_eval_expr(code)?;
-            assert_eq!(result.unwrap_number(), 24.);
-            Ok(())
-        }
+        math_test!(substraction_one_arg, "(- 3)", -3.);
 
-        #[test]
-        fn division() -> Result<()> {
-            let code = "(/ 3 5)";
-            let result = test_eval_expr(code)?;
-            assert_eq!(result.unwrap_number(), 3. / 5.);
-            Ok(())
-        }
+        math_test!(substraction_default, "(-)", 0.);
 
-        #[test]
-        fn division_neg() -> Result<()> {
-            let code = "(/ -6 7)";
-            let result = test_eval_expr(code)?;
-            assert_eq!(result.unwrap_number(), -6. / 7.);
-            Ok(())
-        }
+        math_test!(multiplication, "(* 3 5)", 15.);
 
-        #[test]
-        fn division_default() -> Result<()> {
-            let code = "(/)";
-            let result = test_eval_expr(code)?;
-            assert_eq!(result.unwrap_number(), 1.);
-            Ok(())
-        }
+        math_test!(multiplication_one_arg, "(* 20)", 20.);
+
+        math_test!(multiplication_nested, "(* (+ 1 2) (+ 5 3))", 24.);
+
+        math_test!(division, "(/ 3 5)", 3. / 5.);
+
+        math_test!(division_neg, "(/ -6 7)", -6. / 7.);
+
+        math_test!(division_default, "(/)", 1.);
+
+        math_test!(division_one_arg, "(/ 2)", 1. / 2.);
 
         #[test]
         fn eq() -> Result<()> {
