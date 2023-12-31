@@ -30,7 +30,11 @@ impl Env {
                 .set_proc("/", Proc(math::div))
                 .set_proc("=", Proc(math::eq))
                 .set_proc("eval", Proc(core::eval))
-                .set_proc("exit", Proc(core::exit));
+                .set_proc("exit", Proc(core::exit))
+                .set_proc("print", Proc(display::print))
+                // TODO: make display separate function that takes output
+                .set_proc("display", Proc(display::print))
+                .set_proc("eprint", Proc(display::eprint));
         })
     }
 

@@ -71,6 +71,35 @@ pub mod core {
     }
 }
 
+pub mod display {
+    use super::*;
+    use crate::eval::EvalError;
+
+    // pub fn display(args: &[Expression], _env: Rc<RefCell<Env>>) -> Result<Expression, EvalError> {
+    //     todo!()
+    // }
+
+    pub fn print(args: &[Expression], _env: Rc<RefCell<Env>>) -> Result<Expression, EvalError> {
+        println!("{}", args_to_str(args));
+        Ok(Expression::Void)
+    }
+
+    pub fn eprint(args: &[Expression], _env: Rc<RefCell<Env>>) -> Result<Expression, EvalError> {
+        eprintln!("{}", args_to_str(args));
+        Ok(Expression::Void)
+    }
+
+    #[inline]
+    fn args_to_str(args: &[Expression]) -> String {
+        args.iter()
+            .map(|x| match x {
+                Expression::Quoted(q) => q.0.as_ref(),
+                _ => x,
+            })
+            .join(" ")
+    }
+}
+
 /// NOTE: math ops do NOT short-circuit
 pub mod math {
     use ordered_float::NotNan;
