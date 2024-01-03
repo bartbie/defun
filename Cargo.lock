@@ -416,6 +416,7 @@ dependencies = [
  "atty",
  "clap",
  "defun",
+ "itertools 0.12.0",
  "rustyline",
  "thiserror",
 ]

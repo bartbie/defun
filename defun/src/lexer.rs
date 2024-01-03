@@ -15,6 +15,18 @@ pub enum Token {
     Apos,
 }
 
+impl std::fmt::Display for Token {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Token::LParen => writeln!(f, "("),
+            Token::RParen => writeln!(f, ")"),
+            Token::Number(n) => writeln!(f, "{}", n),
+            Token::Symbol(s) => writeln!(f, "{}", s),
+            Token::Apos => writeln!(f, "'"),
+        }
+    }
+}
+
 impl Token {
     pub fn sym(s: &str) -> Self {
         Self::Symbol(s.to_owned())

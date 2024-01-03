@@ -92,8 +92,9 @@ pub mod run {
 }
 
 pub mod parse {
-    use defun::parser;
-    use std::io;
+    use defun::{expr::Expression, parser};
+    use itertools::Itertools;
+    use std::{fs, io, path::PathBuf};
     use thiserror::Error;
 
     #[derive(Error, Debug)]
@@ -103,12 +104,44 @@ pub mod parse {
         #[error(transparent)]
         IOErr(#[from] io::Error),
     }
+
+    fn inner(file: PathBuf) -> Result<Vec<Expression>, Error> {
+        Ok(parser::parse_script(&fs::read_to_string(file)?)?)
+    }
+
+    pub fn run(file: PathBuf) {
+        match inner(file) {
+            Ok(x) => println!("{}", x.iter().join("\n")),
+            Err(e) => eprintln!("Error -- {}", e),
+        }
+    }
+}
+
+pub mod lex {
+    use defun::lexer;
+    use itertools::Itertools;
+    use std::{fs, io, path::PathBuf};
+
+    fn inner(file: PathBuf) -> Result<Vec<lexer::Token>, io::Error> {
+        Ok(lexer::tokenize(&fs::read_to_string(file)?))
+    }
+
+    fn to_str(tok: &lexer::Token) -> String {
+        format!("{:?}", tok).replace("Token::", "")
+    }
+
+    pub fn run(file: PathBuf) {
+        match inner(file) {
+            Ok(x) => println!("{}", x.iter().map(to_str).join("\n")),
+
+            Err(e) => eprintln!("Error -- {}", e),
+        }
+    }
 }
 
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
-// TODO: create proper subcommands structure here
 #[derive(Parser, Debug)]
 /// A non-compliant Scheme interpreter written in Rust.
 pub struct Args {
@@ -118,32 +151,38 @@ pub struct Args {
 
 #[derive(Subcommand, Debug)]
 pub enum Commands {
+    /// Run program from a script file.
     Run {
-        /// Program to run from a script file.
+        /// Program to run.
         file: PathBuf,
     },
+    /// Parse program from a script file.
     Parse {
-        /// Program to parse from a script file.
+        /// Program to parse.
+        file: PathBuf,
+    },
+
+    /// Lex (tokenize) program from a script file.
+    Lex {
+        /// Program to lex.
         file: PathBuf,
     },
 }
 
 pub fn run() {
     let args = Args::parse();
-    if let Some(command) = args.command {
-        match command {
-            Commands::Run { file } => {
-                run::run(run::Opts {
-                    mode: run::Mode::Script(file),
-                });
-            }
-            Commands::Parse { file } => {
-                todo!()
-            }
-        }
-    } else {
-        run::run(run::Opts {
+    let Some(command) = args.command else {
+        return run::run(run::Opts {
             mode: run::Mode::stdin_or_repl(),
         });
+    };
+    match command {
+        Commands::Run { file } => {
+            run::run(run::Opts {
+                mode: run::Mode::Script(file),
+            });
+        }
+        Commands::Parse { file } => parse::run(file),
+        Commands::Lex { file } => lex::run(file),
     }
 }

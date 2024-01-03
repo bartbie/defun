@@ -11,3 +11,4 @@ atty = "0.2.14"
 clap = { version = "4.4.7", features = ["derive"] }
 rustyline = "13.0.0"
 thiserror = "1.0.50"
+itertools = "0.12.0"
