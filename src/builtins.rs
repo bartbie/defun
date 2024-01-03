@@ -71,6 +71,39 @@ pub mod core {
     }
 }
 
+pub mod check {
+    use super::*;
+    use crate::eval::EvalError;
+
+    /// macro to setup checks fn boilerplate for [`check`]
+    macro_rules! check_fn {
+        ($fn_name:ident, $enum_fn:ident) => {
+            pub fn $fn_name(
+                args: &[Expression],
+                _env: Rc<RefCell<Env>>,
+            ) -> Result<Expression, EvalError> {
+                let [item] = args else {
+                    return Err(EvalError::WrongArgCount {
+                        required: 1,
+                        passed: args.len(),
+                    });
+                };
+                Ok(Expression::Bool(item.$enum_fn()))
+            }
+        };
+    }
+
+    check_fn!(quote, is_quoted);
+    check_fn!(bool, is_bool);
+    check_fn!(number, is_number);
+    check_fn!(list, is_s_list);
+    check_fn!(lambda, is_lambda);
+    check_fn!(proc, is_proc);
+    // TODO: maybe unify those ^
+    check_fn!(void, is_void);
+    check_fn!(symbol, is_symbol);
+}
+
 pub mod display {
     use super::*;
     use crate::eval::EvalError;
@@ -132,9 +165,6 @@ pub mod math {
             })
         }
     }
-    /*
-     *
-     * */
 
     impl<T> ReduceOk for T where T: Iterator<Item = Result<Num, EvalError>> {}
 
@@ -197,7 +227,7 @@ mod tests {
     mod math {
         use super::*;
 
-        /// macro to setup test boilerplate for parser::parse_script
+        /// macro to setup test boilerplate for [`tests::math`]
         macro_rules! math_test {
             ($fn_name:ident, $code:literal, $expected:expr) => {
                 #[test]
