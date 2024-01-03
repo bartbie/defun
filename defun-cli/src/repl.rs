@@ -1,4 +1,4 @@
-use crate::{eval, interpreter};
+use defun::{eval, interpreter};
 use rustyline::{history::History, Editor, Helper};
 
 const HISTORY_FILE: &str = ".defunhistory";
