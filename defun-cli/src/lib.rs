@@ -167,6 +167,8 @@ pub enum Commands {
         /// Program to lex.
         file: PathBuf,
     },
+    /// Run the REPL
+    Repl,
 }
 
 pub fn run() {
@@ -184,5 +186,8 @@ pub fn run() {
         }
         Commands::Parse { file } => parse::run(file),
         Commands::Lex { file } => lex::run(file),
+        Commands::Repl => run::run(run::Opts {
+            mode: run::Mode::Repl,
+        }),
     }
 }

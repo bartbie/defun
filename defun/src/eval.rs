@@ -25,7 +25,7 @@ pub enum EvalError {
     ExpectedIdent,
     #[error("Operator is not a procedure!")]
     OpNotProc,
-    #[error("This procedure requires {required} arguments, {passed} passed!")]
+    #[error("This procedure requires {required} argument(s), {passed} passed!")]
     WrongArgCount { required: usize, passed: usize },
     #[error(transparent)]
     ParseErr(#[from] ParseError),

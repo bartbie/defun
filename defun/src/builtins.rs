@@ -241,13 +241,13 @@ mod tests {
 
         math_test!(addition, "(+ 2 3)", 5.);
 
-        math_test!(substraction, "(- 4 3)", 1.);
+        math_test!(subtraction, "(- 4 3)", 1.);
 
-        math_test!(substraction_neg, "(- 6 10)", -4.);
+        math_test!(subtraction_neg, "(- 6 10)", -4.);
 
-        math_test!(substraction_one_arg, "(- 3)", -3.);
+        math_test!(subtraction_one_arg, "(- 3)", -3.);
 
-        math_test!(substraction_default, "(-)", 0.);
+        math_test!(subtraction_default, "(-)", 0.);
 
         math_test!(multiplication, "(* 3 5)", 15.);
 
