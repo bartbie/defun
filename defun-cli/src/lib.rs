@@ -62,8 +62,11 @@ pub mod run {
 
     impl Mode {
         pub fn stdin_or_repl() -> Self {
-            //TODO
-            Self::Repl
+            if atty::is(atty::Stream::Stdin) {
+                Self::Repl
+            } else {
+                Self::Stdin
+            }
         }
     }
 
@@ -174,10 +177,12 @@ pub enum Commands {
 pub fn run() {
     let args = Args::parse();
     let Some(command) = args.command else {
+        // no command
         return run::run(run::Opts {
             mode: run::Mode::stdin_or_repl(),
         });
     };
+    // command
     match command {
         Commands::Run { file } => {
             run::run(run::Opts {
